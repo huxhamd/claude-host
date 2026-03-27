@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
@@ -44,6 +45,8 @@ export class ClaudeTerminalView extends ItemView {
 				background: '#1e1e1e',
 				foreground: '#d4d4d4',
 				cursor: '#d4d4d4',
+				selectionBackground: 'rgba(0, 120, 212, 0.4)',
+				selectionInactiveBackground: 'rgba(100, 100, 100, 0.3)',
 			},
 			scrollback: 5000,
 		});
@@ -51,6 +54,13 @@ export class ClaudeTerminalView extends ItemView {
 		this.fitAddon = new FitAddon();
 		this.terminal.loadAddon(this.fitAddon);
 		this.terminal.open(termEl);
+
+		const webgl = new WebglAddon();
+		webgl.onContextLoss(() => {
+			webgl.dispose();
+			this.terminal.loadAddon(new WebglAddon());
+		});
+		this.terminal.loadAddon(webgl);
 
 		setTimeout(() => this.fitAddon.fit(), 50);
 

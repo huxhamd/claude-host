@@ -12,7 +12,7 @@ const [shell, args] = process.platform === 'win32'
     : [process.env.SHELL || '/bin/bash', ['-c', 'claude']];
 
 const ptyProcess = pty.spawn(shell, args, {
-    name: 'xterm-color',
+    name: 'xterm-256color',
     cols,
     rows,
     cwd,

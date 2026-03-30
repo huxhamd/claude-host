@@ -13,6 +13,7 @@ export class ClaudeTerminalView extends ItemView {
 	private fitAddon: FitAddon;
 	private serverProcess: ChildProcess | null = null;
 	private resizeObserver: ResizeObserver | null = null;
+	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
 		super(leaf);
@@ -62,8 +63,18 @@ export class ClaudeTerminalView extends ItemView {
 		});
 		this.terminal.loadAddon(webgl);
 
-		setTimeout(() => this.fitAddon.fit(), 50);
+		// Wait until the Obsidian panel has actual pixel dimensions before
+		// fitting — proposeDimensions() returns undefined until layout is done.
+		await new Promise<void>(resolve => {
+			if (termEl.offsetWidth > 0) { resolve(); return; }
+			const sizer = new ResizeObserver(() => {
+				if (termEl.offsetWidth > 0) { sizer.disconnect(); resolve(); }
+			});
+			sizer.observe(termEl);
+		});
+		this.fitAddon.fit();
 
+		// Keep fitting on every subsequent panel resize.
 		this.resizeObserver = new ResizeObserver(() => this.fitAddon.fit());
 		this.resizeObserver.observe(termEl);
 		this.register(() => this.resizeObserver?.disconnect());
@@ -115,7 +126,25 @@ export class ClaudeTerminalView extends ItemView {
 		});
 
 		this.terminal.onData((data: string) => this.sendInput(data));
-		this.terminal.onResize(({ cols, rows }) => this.sendResize(cols, rows));
+
+		// Decouple the PTY resize from xterm's visual resize. xterm may fire
+		// onResize many times per second while the user drags a panel divider;
+		// sending every event to ConPTY causes it to scroll-and-redraw
+		// repeatedly, flooding the scrollback with stale UI fragments.
+		//
+		// Instead, debounce: let xterm resize visually on every frame, but only
+		// notify the PTY once the user stops dragging. ESC[3J is queued just
+		// before that single notification so it sits ahead of ConPTY's response
+		// in xterm's write queue — the clear runs first, then ConPTY's single
+		// clean redraw repopulates the scrollback from its own history.
+		this.terminal.onResize(() => {
+			if (this.ptyResizeTimer) clearTimeout(this.ptyResizeTimer);
+			this.ptyResizeTimer = setTimeout(() => {
+				this.terminal.write('\x1b[3J');
+				this.sendResize(this.terminal.cols, this.terminal.rows);
+				this.ptyResizeTimer = null;
+			}, 150);
+		});
 	}
 
 	private sendInput(data: string): void {
@@ -146,6 +175,10 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.ptyResizeTimer) {
+			clearTimeout(this.ptyResizeTimer);
+			this.ptyResizeTimer = null;
+		}
 		const proc = this.serverProcess;
 		this.serverProcess = null;
 		proc?.kill();

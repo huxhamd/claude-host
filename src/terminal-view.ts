@@ -79,6 +79,24 @@ export class ClaudeTerminalView extends ItemView {
 		this.resizeObserver.observe(termEl);
 		this.register(() => this.resizeObserver?.disconnect());
 
+		const onContextMenu = async (e: MouseEvent) => {
+			e.preventDefault();
+			const selection = this.terminal.getSelection();
+			if (selection) {
+				await navigator.clipboard.writeText(selection);
+				this.terminal.clearSelection();
+			} else {
+				try {
+					const text = await navigator.clipboard.readText();
+					if (text) this.sendInput(text);
+				} catch {
+					// clipboard read failed (e.g. no permission) — ignore silently
+				}
+			}
+		};
+		termEl.addEventListener('contextmenu', onContextMenu);
+		this.register(() => termEl.removeEventListener('contextmenu', onContextMenu));
+
 		await this.spawnShell();
 	}
 

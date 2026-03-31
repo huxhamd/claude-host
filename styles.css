@@ -146,3 +146,94 @@
 	right: 0;
 	pointer-events: none;
 }
+
+.claude-error-panel {
+	display: none;
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	color: #d4d4d4;
+	padding: 24px;
+	text-align: center;
+}
+
+.claude-error-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	max-width: 480px;
+	width: 100%;
+}
+
+.claude-error-plugin-name {
+	font-size: 0.78em;
+	color: rgba(212, 212, 212, 0.45);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	margin: 0;
+}
+
+.claude-error-heading {
+	font-size: 1.1em;
+	margin: 0;
+}
+
+.claude-error-description {
+	font-size: 0.88em;
+	color: rgba(212, 212, 212, 0.7);
+	margin: 0;
+}
+
+.claude-error-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.claude-error-btn {
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.18);
+	color: #d4d4d4;
+	padding: 5px 18px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.85em;
+}
+
+.claude-error-btn:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.claude-error-btn-primary {
+	background: rgba(0, 120, 212, 0.5);
+	border-color: rgba(0, 120, 212, 0.8);
+}
+
+.claude-error-btn-primary:hover {
+	background: rgba(0, 120, 212, 0.7);
+}
+
+.claude-error-details-btn {
+	padding: 5px 14px;
+}
+
+.claude-error-details-btn:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.claude-error-details {
+	display: none;
+	background: rgba(0, 0, 0, 0.35);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 4px;
+	padding: 10px 14px;
+	font-size: 0.8em;
+	text-align: left;
+	width: 100%;
+	white-space: pre-wrap;
+	word-break: break-all;
+	color: #f48771;
+	margin: 0;
+	box-sizing: border-box;
+}

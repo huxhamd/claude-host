@@ -5,15 +5,19 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
+import { promises as fs } from 'fs';
 
 export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
 export class ClaudeTerminalView extends ItemView {
 	private terminal: Terminal;
 	private fitAddon: FitAddon;
+	private termEl: HTMLElement;
+	private errorEl: HTMLElement;
 	private serverProcess: ChildProcess | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
+	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
 		super(leaf);
@@ -36,8 +40,17 @@ export class ClaudeTerminalView extends ItemView {
 		container.empty();
 		container.addClass('claude-terminal-container');
 
-		const termEl = container.createDiv({ cls: 'claude-terminal-el' });
+		this.termEl = container.createDiv({ cls: 'claude-terminal-el' });
+		this.errorEl = container.createDiv({ cls: 'claude-error-panel' });
 
+		try {
+			await this.initTerminal();
+		} catch (e) {
+			this.showError('An unexpected error occurred.', String(e));
+		}
+	}
+
+	private async initTerminal(): Promise<void> {
 		this.terminal = new Terminal({
 			cursorBlink: true,
 			fontSize: 13,
@@ -54,7 +67,7 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.fitAddon = new FitAddon();
 		this.terminal.loadAddon(this.fitAddon);
-		this.terminal.open(termEl);
+		this.terminal.open(this.termEl);
 
 		const webgl = new WebglAddon();
 		webgl.onContextLoss(() => {
@@ -66,20 +79,19 @@ export class ClaudeTerminalView extends ItemView {
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
 		await new Promise<void>(resolve => {
-			if (termEl.offsetWidth > 0) { resolve(); return; }
+			if (this.termEl.offsetWidth > 0) { resolve(); return; }
 			const sizer = new ResizeObserver(() => {
-				if (termEl.offsetWidth > 0) { sizer.disconnect(); resolve(); }
+				if (this.termEl.offsetWidth > 0) { sizer.disconnect(); resolve(); }
 			});
-			sizer.observe(termEl);
+			sizer.observe(this.termEl);
 		});
 		this.fitAddon.fit();
 
 		// Keep fitting on every subsequent panel resize.
 		this.resizeObserver = new ResizeObserver(() => this.fitAddon.fit());
-		this.resizeObserver.observe(termEl);
-		this.register(() => this.resizeObserver?.disconnect());
+		this.resizeObserver.observe(this.termEl);
 
-		const onContextMenu = async (e: MouseEvent) => {
+		this.onContextMenu = async (e: MouseEvent) => {
 			e.preventDefault();
 			const selection = this.terminal.getSelection();
 			if (selection) {
@@ -94,21 +106,45 @@ export class ClaudeTerminalView extends ItemView {
 				}
 			}
 		};
-		termEl.addEventListener('contextmenu', onContextMenu);
-		this.register(() => termEl.removeEventListener('contextmenu', onContextMenu));
+		this.termEl.addEventListener('contextmenu', this.onContextMenu);
 
 		await this.spawnShell();
+	}
+
+	private teardownTerminal(): void {
+		if (this.ptyResizeTimer) {
+			clearTimeout(this.ptyResizeTimer);
+			this.ptyResizeTimer = null;
+		}
+		const proc = this.serverProcess;
+		this.serverProcess = null;
+		proc?.kill();
+		this.resizeObserver?.disconnect();
+		this.resizeObserver = null;
+		if (this.onContextMenu) {
+			this.termEl?.removeEventListener('contextmenu', this.onContextMenu);
+			this.onContextMenu = null;
+		}
+		this.terminal?.dispose();
+		this.termEl?.empty();
 	}
 
 	private async spawnShell(): Promise<void> {
 		const vaultPath = this.getVaultPath();
 		if (!vaultPath) {
-			this.terminal.write('\r\nError: Could not determine vault path. This plugin requires a local vault.\r\n');
+			this.showError('Could not determine vault path. This plugin requires a local vault.');
 			return;
 		}
 
 		const pluginDir = path.join(vaultPath, this.pluginManifestDir);
 		const serverScript = path.join(pluginDir, 'pty-server.js');
+
+		try {
+			await fs.access(serverScript);
+		} catch {
+			this.showError('Claude Host could not be started.', `Plugin file not found: ${serverScript}`);
+			return;
+		}
 
 		try {
 			this.serverProcess = spawn('node', [
@@ -118,11 +154,12 @@ export class ClaudeTerminalView extends ItemView {
 				vaultPath,
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
-			this.terminal.write(`\r\nFailed to start pty-server.js: ${e}\r\n`);
+			this.showError('Claude Host could not be started.', String(e));
 			return;
 		}
 
 		let readBuf = Buffer.alloc(0);
+		let stderrOutput = '';
 
 		this.serverProcess.stdout!.on('data', (chunk: Buffer) => {
 			readBuf = Buffer.concat([readBuf, chunk]);
@@ -134,13 +171,22 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
+		const STDERR_MAX = 10 * 1024;
 		this.serverProcess.stderr!.on('data', (chunk: Buffer) => {
-			this.terminal.write(chunk.toString());
+			stderrOutput += chunk.toString();
+			if (stderrOutput.length > STDERR_MAX)
+				stderrOutput = stderrOutput.slice(-STDERR_MAX);
 		});
 
-		this.serverProcess.on('exit', () => {
+		this.serverProcess.on('exit', (code) => {
 			this.serverProcess = null;
-			this.leaf.detach();
+			if (code === 0 || code === null) {
+				this.leaf.detach();
+			} else {
+				const stderr = stderrOutput.trim();
+				const details = [stderr, `Exit code: ${code}`].filter(Boolean).join('\n\n');
+				this.showError('Claude Code stopped unexpectedly.', details);
+			}
 		});
 
 		this.terminal.onData((data: string) => this.sendInput(data));
@@ -184,6 +230,46 @@ export class ClaudeTerminalView extends ItemView {
 		this.serverProcess.stdin.write(msg);
 	}
 
+	private showError(message: string, details?: string): void {
+		if (!this.termEl || !this.errorEl) return;
+		this.termEl.style.display = 'none';
+		this.errorEl.style.display = 'flex';
+		this.errorEl.empty();
+
+		const content = this.errorEl.createDiv({ cls: 'claude-error-content' });
+		content.createEl('p', { cls: 'claude-error-plugin-name', text: 'Claude Host' });
+		content.createEl('p', { cls: 'claude-error-heading', text: 'Oops! Something went wrong.' });
+		content.createEl('p', { cls: 'claude-error-description', text: message });
+
+		const actions = content.createDiv({ cls: 'claude-error-actions' });
+
+		const relaunchBtn = actions.createEl('button', { cls: 'claude-error-btn claude-error-btn-primary', text: 'Relaunch' });
+		relaunchBtn.addEventListener('click', async () => {
+			relaunchBtn.disabled = true;
+			this.teardownTerminal();
+			this.errorEl.style.display = 'none';
+			this.termEl.style.display = '';
+			try {
+				await this.initTerminal();
+			} catch (e) {
+				this.showError('An unexpected error occurred.', String(e));
+			}
+		});
+
+		const closeBtn = actions.createEl('button', { cls: 'claude-error-btn', text: 'Close' });
+		closeBtn.addEventListener('click', () => this.leaf.detach());
+
+		if (details && details !== message) {
+			const detailsBtn = content.createEl('button', { cls: 'claude-error-btn claude-error-details-btn', text: 'Show error details' });
+			const detailsEl = content.createEl('pre', { cls: 'claude-error-details', text: details });
+			detailsBtn.addEventListener('click', () => {
+				const visible = detailsEl.style.display === 'block';
+				detailsEl.style.display = visible ? 'none' : 'block';
+				detailsBtn.textContent = visible ? 'Show error details' : 'Hide error details';
+			});
+		}
+	}
+
 	private getVaultPath(): string | null {
 		const adapter = this.app.vault.adapter;
 		if ('basePath' in adapter) {
@@ -193,13 +279,6 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
-		if (this.ptyResizeTimer) {
-			clearTimeout(this.ptyResizeTimer);
-			this.ptyResizeTimer = null;
-		}
-		const proc = this.serverProcess;
-		this.serverProcess = null;
-		proc?.kill();
-		this.terminal?.dispose();
+		this.teardownTerminal();
 	}
 }

@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
-import { existsSync } from 'fs';
+import { promises as fs } from 'fs';
 
 export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
@@ -139,7 +139,9 @@ export class ClaudeTerminalView extends ItemView {
 		const pluginDir = path.join(vaultPath, this.pluginManifestDir);
 		const serverScript = path.join(pluginDir, 'pty-server.js');
 
-		if (!existsSync(serverScript)) {
+		try {
+			await fs.access(serverScript);
+		} catch {
 			this.showError('Claude Host could not be started.', `Plugin file not found: ${serverScript}`);
 			return;
 		}
@@ -169,8 +171,11 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
+		const STDERR_MAX = 10 * 1024;
 		this.serverProcess.stderr!.on('data', (chunk: Buffer) => {
 			stderrOutput += chunk.toString();
+			if (stderrOutput.length > STDERR_MAX)
+				stderrOutput = stderrOutput.slice(-STDERR_MAX);
 		});
 
 		this.serverProcess.on('exit', (code) => {
@@ -226,6 +231,7 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	private showError(message: string, details?: string): void {
+		if (!this.termEl || !this.errorEl) return;
 		this.termEl.style.display = 'none';
 		this.errorEl.style.display = 'flex';
 		this.errorEl.empty();
@@ -239,6 +245,7 @@ export class ClaudeTerminalView extends ItemView {
 
 		const relaunchBtn = actions.createEl('button', { cls: 'claude-error-btn claude-error-btn-primary', text: 'Relaunch' });
 		relaunchBtn.addEventListener('click', async () => {
+			relaunchBtn.disabled = true;
 			this.teardownTerminal();
 			this.errorEl.style.display = 'none';
 			this.termEl.style.display = '';
@@ -253,7 +260,7 @@ export class ClaudeTerminalView extends ItemView {
 		closeBtn.addEventListener('click', () => this.leaf.detach());
 
 		if (details && details !== message) {
-			const detailsBtn = content.createEl('button', { cls: 'claude-error-details-btn', text: 'Show error details' });
+			const detailsBtn = content.createEl('button', { cls: 'claude-error-btn claude-error-details-btn', text: 'Show error details' });
 			const detailsEl = content.createEl('pre', { cls: 'claude-error-details', text: details });
 			detailsBtn.addEventListener('click', () => {
 				const visible = detailsEl.style.display === 'block';

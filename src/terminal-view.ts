@@ -10,7 +10,7 @@ import { promises as fs } from 'fs';
 export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
 export class ClaudeTerminalView extends ItemView {
-	private terminal: Terminal;
+	private terminal: Terminal | null = null;
 	private fitAddon: FitAddon;
 	private termEl: HTMLElement;
 	private errorEl: HTMLElement;
@@ -75,6 +75,10 @@ export class ClaudeTerminalView extends ItemView {
 				magenta: '#fd5db1',
 				cyan: '#7ec8e3',
 				white: '#d4d4d4',
+				// Bright variants match their normal counterparts. This plugin
+				// is exclusively a Claude Code host — the user cannot access the
+				// underlying shell — so the bold-text distinction these slots
+				// provide in general-purpose terminals is not needed here.
 				brightBlack: '#999999',
 				brightRed: '#ff6b80',
 				brightGreen: '#4eba65',
@@ -99,6 +103,7 @@ export class ClaudeTerminalView extends ItemView {
 				magenta: '#ff0087',
 				cyan: '#0369a1',
 				white: '#f5f5f5',
+				// See dark theme comment above re: bright variant parity.
 				brightBlack: '#666666',
 				brightRed: '#ab2b3f',
 				brightGreen: '#2c7a39',
@@ -121,15 +126,15 @@ export class ClaudeTerminalView extends ItemView {
 		});
 
 		this.fitAddon = new FitAddon();
-		this.terminal.loadAddon(this.fitAddon);
-		this.terminal.open(this.termEl);
+		this.terminal!.loadAddon(this.fitAddon);
+		this.terminal!.open(this.termEl);
 
 		const webgl = new WebglAddon();
 		webgl.onContextLoss(() => {
 			webgl.dispose();
-			this.terminal.loadAddon(new WebglAddon());
+			this.terminal?.loadAddon(new WebglAddon());
 		});
-		this.terminal.loadAddon(webgl);
+		this.terminal!.loadAddon(webgl);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
@@ -148,10 +153,10 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.onContextMenu = async (e: MouseEvent) => {
 			e.preventDefault();
-			const selection = this.terminal.getSelection();
+			const selection = this.terminal?.getSelection();
 			if (selection) {
 				await navigator.clipboard.writeText(selection);
-				this.terminal.clearSelection();
+				this.terminal?.clearSelection();
 			} else {
 				try {
 					const text = await navigator.clipboard.readText();
@@ -181,6 +186,7 @@ export class ClaudeTerminalView extends ItemView {
 			this.onContextMenu = null;
 		}
 		this.terminal?.dispose();
+		this.terminal = null;
 		this.termEl?.empty();
 	}
 
@@ -204,8 +210,8 @@ export class ClaudeTerminalView extends ItemView {
 		try {
 			this.serverProcess = spawn('node', [
 				serverScript,
-				String(this.terminal.cols),
-				String(this.terminal.rows),
+				String(this.terminal!.cols),
+				String(this.terminal!.rows),
 				vaultPath,
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
@@ -221,7 +227,7 @@ export class ClaudeTerminalView extends ItemView {
 			while (readBuf.length >= 4) {
 				const len = readBuf.readUInt32BE(0);
 				if (readBuf.length < 4 + len) break;
-				this.terminal.write(readBuf.slice(4, 4 + len).toString('utf8'));
+				this.terminal?.write(readBuf.slice(4, 4 + len).toString('utf8'));
 				readBuf = readBuf.slice(4 + len);
 			}
 		});
@@ -244,7 +250,7 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
-		this.terminal.onData((data: string) => this.sendInput(data));
+		this.terminal!.onData((data: string) => this.sendInput(data));
 
 		// Decouple the PTY resize from xterm's visual resize. xterm may fire
 		// onResize many times per second while the user drags a panel divider;
@@ -256,11 +262,11 @@ export class ClaudeTerminalView extends ItemView {
 		// before that single notification so it sits ahead of ConPTY's response
 		// in xterm's write queue — the clear runs first, then ConPTY's single
 		// clean redraw repopulates the scrollback from its own history.
-		this.terminal.onResize(() => {
+		this.terminal!.onResize(() => {
 			if (this.ptyResizeTimer) clearTimeout(this.ptyResizeTimer);
 			this.ptyResizeTimer = setTimeout(() => {
-				this.terminal.write('\x1b[3J');
-				this.sendResize(this.terminal.cols, this.terminal.rows);
+				this.terminal?.write('\x1b[3J');
+				this.sendResize(this.terminal?.cols ?? 80, this.terminal?.rows ?? 24);
 				this.ptyResizeTimer = null;
 			}, 150);
 		});

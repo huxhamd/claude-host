@@ -48,6 +48,67 @@ export class ClaudeTerminalView extends ItemView {
 		} catch (e) {
 			this.showError('An unexpected error occurred.', String(e));
 		}
+
+		this.registerEvent(this.app.workspace.on('css-change', () => {
+			if (this.terminal) {
+				this.terminal.options.theme = this.getTerminalTheme();
+			}
+		}));
+	}
+
+	private getTerminalTheme() {
+		const isDark = document.body.classList.contains('theme-dark');
+		const bg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim();
+
+		if (isDark) {
+			return {
+				background: bg || '#1e1e1e',
+				foreground: '#ffffff',
+				cursor: '#ffffff',
+				selectionBackground: 'rgba(177, 185, 249, 0.3)',
+				selectionInactiveBackground: 'rgba(153, 153, 153, 0.2)',
+				black: '#1e1e1e',
+				red: '#ff6b80',
+				green: '#4eba65',
+				yellow: '#ffc107',
+				blue: '#b1b9f9',
+				magenta: '#fd5db1',
+				cyan: '#7ec8e3',
+				white: '#d4d4d4',
+				brightBlack: '#999999',
+				brightRed: '#ff6b80',
+				brightGreen: '#4eba65',
+				brightYellow: '#ffc107',
+				brightBlue: '#b1b9f9',
+				brightMagenta: '#fd5db1',
+				brightCyan: '#a8d8ea',
+				brightWhite: '#ffffff',
+			};
+		} else {
+			return {
+				background: bg || '#ffffff',
+				foreground: '#000000',
+				cursor: '#000000',
+				selectionBackground: 'rgba(87, 105, 247, 0.25)',
+				selectionInactiveBackground: 'rgba(102, 102, 102, 0.2)',
+				black: '#000000',
+				red: '#ab2b3f',
+				green: '#2c7a39',
+				yellow: '#966c1e',
+				blue: '#5769f7',
+				magenta: '#ff0087',
+				cyan: '#0369a1',
+				white: '#f5f5f5',
+				brightBlack: '#666666',
+				brightRed: '#ab2b3f',
+				brightGreen: '#2c7a39',
+				brightYellow: '#966c1e',
+				brightBlue: '#5769f7',
+				brightMagenta: '#ff0087',
+				brightCyan: '#075985',
+				brightWhite: '#ffffff',
+			};
+		}
 	}
 
 	private async initTerminal(): Promise<void> {
@@ -55,13 +116,7 @@ export class ClaudeTerminalView extends ItemView {
 			cursorBlink: true,
 			fontSize: 13,
 			fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
-			theme: {
-				background: '#1e1e1e',
-				foreground: '#d4d4d4',
-				cursor: '#d4d4d4',
-				selectionBackground: 'rgba(0, 120, 212, 0.4)',
-				selectionInactiveBackground: 'rgba(100, 100, 100, 0.3)',
-			},
+			theme: this.getTerminalTheme(),
 			scrollback: 5000,
 		});
 

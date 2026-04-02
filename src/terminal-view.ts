@@ -10,7 +10,7 @@ import { promises as fs } from 'fs';
 export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
 export class ClaudeTerminalView extends ItemView {
-	private terminal: Terminal;
+	private terminal: Terminal | null = null;
 	private fitAddon: FitAddon;
 	private termEl: HTMLElement;
 	private errorEl: HTMLElement;
@@ -48,6 +48,72 @@ export class ClaudeTerminalView extends ItemView {
 		} catch (e) {
 			this.showError('An unexpected error occurred.', String(e));
 		}
+
+		this.registerEvent(this.app.workspace.on('css-change', () => {
+			if (this.terminal) {
+				this.terminal.options.theme = this.getTerminalTheme();
+			}
+		}));
+	}
+
+	private getTerminalTheme() {
+		const isDark = document.body.classList.contains('theme-dark');
+		const bg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim();
+
+		if (isDark) {
+			return {
+				background: bg || '#1e1e1e',
+				foreground: '#ffffff',
+				cursor: '#ffffff',
+				selectionBackground: 'rgba(177, 185, 249, 0.3)',
+				selectionInactiveBackground: 'rgba(153, 153, 153, 0.2)',
+				black: '#1e1e1e',
+				red: '#ff6b80',
+				green: '#4eba65',
+				yellow: '#ffc107',
+				blue: '#b1b9f9',
+				magenta: '#fd5db1',
+				cyan: '#7ec8e3',
+				white: '#d4d4d4',
+				// Bright variants match their normal counterparts. This plugin
+				// is exclusively a Claude Code host — the user cannot access the
+				// underlying shell — so the bold-text distinction these slots
+				// provide in general-purpose terminals is not needed here.
+				brightBlack: '#999999',
+				brightRed: '#ff6b80',
+				brightGreen: '#4eba65',
+				brightYellow: '#ffc107',
+				brightBlue: '#b1b9f9',
+				brightMagenta: '#fd5db1',
+				brightCyan: '#a8d8ea',
+				brightWhite: '#ffffff',
+			};
+		} else {
+			return {
+				background: bg || '#ffffff',
+				foreground: '#000000',
+				cursor: '#000000',
+				selectionBackground: 'rgba(87, 105, 247, 0.25)',
+				selectionInactiveBackground: 'rgba(102, 102, 102, 0.2)',
+				black: '#000000',
+				red: '#ab2b3f',
+				green: '#2c7a39',
+				yellow: '#966c1e',
+				blue: '#5769f7',
+				magenta: '#ff0087',
+				cyan: '#0369a1',
+				white: '#f5f5f5',
+				// See dark theme comment above re: bright variant parity.
+				brightBlack: '#666666',
+				brightRed: '#ab2b3f',
+				brightGreen: '#2c7a39',
+				brightYellow: '#966c1e',
+				brightBlue: '#5769f7',
+				brightMagenta: '#ff0087',
+				brightCyan: '#075985',
+				brightWhite: '#ffffff',
+			};
+		}
 	}
 
 	private async initTerminal(): Promise<void> {
@@ -55,26 +121,20 @@ export class ClaudeTerminalView extends ItemView {
 			cursorBlink: true,
 			fontSize: 13,
 			fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
-			theme: {
-				background: '#1e1e1e',
-				foreground: '#d4d4d4',
-				cursor: '#d4d4d4',
-				selectionBackground: 'rgba(0, 120, 212, 0.4)',
-				selectionInactiveBackground: 'rgba(100, 100, 100, 0.3)',
-			},
+			theme: this.getTerminalTheme(),
 			scrollback: 5000,
 		});
 
 		this.fitAddon = new FitAddon();
-		this.terminal.loadAddon(this.fitAddon);
-		this.terminal.open(this.termEl);
+		this.terminal!.loadAddon(this.fitAddon);
+		this.terminal!.open(this.termEl);
 
 		const webgl = new WebglAddon();
 		webgl.onContextLoss(() => {
 			webgl.dispose();
-			this.terminal.loadAddon(new WebglAddon());
+			this.terminal?.loadAddon(new WebglAddon());
 		});
-		this.terminal.loadAddon(webgl);
+		this.terminal!.loadAddon(webgl);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
@@ -93,10 +153,10 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.onContextMenu = async (e: MouseEvent) => {
 			e.preventDefault();
-			const selection = this.terminal.getSelection();
+			const selection = this.terminal?.getSelection();
 			if (selection) {
 				await navigator.clipboard.writeText(selection);
-				this.terminal.clearSelection();
+				this.terminal?.clearSelection();
 			} else {
 				try {
 					const text = await navigator.clipboard.readText();
@@ -126,6 +186,7 @@ export class ClaudeTerminalView extends ItemView {
 			this.onContextMenu = null;
 		}
 		this.terminal?.dispose();
+		this.terminal = null;
 		this.termEl?.empty();
 	}
 
@@ -149,8 +210,8 @@ export class ClaudeTerminalView extends ItemView {
 		try {
 			this.serverProcess = spawn('node', [
 				serverScript,
-				String(this.terminal.cols),
-				String(this.terminal.rows),
+				String(this.terminal!.cols),
+				String(this.terminal!.rows),
 				vaultPath,
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
@@ -166,7 +227,7 @@ export class ClaudeTerminalView extends ItemView {
 			while (readBuf.length >= 4) {
 				const len = readBuf.readUInt32BE(0);
 				if (readBuf.length < 4 + len) break;
-				this.terminal.write(readBuf.slice(4, 4 + len).toString('utf8'));
+				this.terminal?.write(readBuf.slice(4, 4 + len).toString('utf8'));
 				readBuf = readBuf.slice(4 + len);
 			}
 		});
@@ -189,7 +250,7 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
-		this.terminal.onData((data: string) => this.sendInput(data));
+		this.terminal!.onData((data: string) => this.sendInput(data));
 
 		// Decouple the PTY resize from xterm's visual resize. xterm may fire
 		// onResize many times per second while the user drags a panel divider;
@@ -201,11 +262,11 @@ export class ClaudeTerminalView extends ItemView {
 		// before that single notification so it sits ahead of ConPTY's response
 		// in xterm's write queue — the clear runs first, then ConPTY's single
 		// clean redraw repopulates the scrollback from its own history.
-		this.terminal.onResize(() => {
+		this.terminal!.onResize(() => {
 			if (this.ptyResizeTimer) clearTimeout(this.ptyResizeTimer);
 			this.ptyResizeTimer = setTimeout(() => {
-				this.terminal.write('\x1b[3J');
-				this.sendResize(this.terminal.cols, this.terminal.rows);
+				this.terminal?.write('\x1b[3J');
+				this.sendResize(this.terminal?.cols ?? 80, this.terminal?.rows ?? 24);
 				this.ptyResizeTimer = null;
 			}, 150);
 		});

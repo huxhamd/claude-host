@@ -122,7 +122,7 @@ export class ClaudeTerminalView extends ItemView {
 		});
 
 		this.fitAddon = new FitAddon();
-		this.terminal.loadAddon(this.fitAddon!);
+		this.terminal.loadAddon(this.fitAddon);
 		this.terminal.open(this.termEl!);
 
 		const webgl = new WebglAddon();
@@ -141,7 +141,7 @@ export class ClaudeTerminalView extends ItemView {
 			});
 			sizer.observe(this.termEl!);
 		});
-		this.fitAddon!.fit();
+		this.fitAddon.fit();
 
 		// Keep fitting on every subsequent panel resize.
 		this.resizeObserver = new ResizeObserver(() => this.fitAddon?.fit());

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -11,9 +12,9 @@ export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
 export class ClaudeTerminalView extends ItemView {
 	private terminal: Terminal | null = null;
-	private fitAddon: FitAddon;
-	private termEl: HTMLElement;
-	private errorEl: HTMLElement;
+	private fitAddon: FitAddon | null = null;
+	private termEl: HTMLElement | null = null;
+	private errorEl: HTMLElement | null = null;
 	private serverProcess: ChildProcess | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,17 +76,13 @@ export class ClaudeTerminalView extends ItemView {
 				magenta: '#fd5db1',
 				cyan: '#7ec8e3',
 				white: '#d4d4d4',
-				// Bright variants match their normal counterparts. This plugin
-				// is exclusively a Claude Code host — the user cannot access the
-				// underlying shell — so the bold-text distinction these slots
-				// provide in general-purpose terminals is not needed here.
 				brightBlack: '#999999',
-				brightRed: '#ff6b80',
-				brightGreen: '#4eba65',
-				brightYellow: '#ffc107',
-				brightBlue: '#b1b9f9',
-				brightMagenta: '#fd5db1',
-				brightCyan: '#a8d8ea',
+				brightRed: '#ff8fa0',
+				brightGreen: '#72cc83',
+				brightYellow: '#ffd147',
+				brightBlue: '#c8cefb',
+				brightMagenta: '#fe80c4',
+				brightCyan: '#a0d9ee',
 				brightWhite: '#ffffff',
 			};
 		} else {
@@ -103,14 +100,13 @@ export class ClaudeTerminalView extends ItemView {
 				magenta: '#ff0087',
 				cyan: '#0369a1',
 				white: '#f5f5f5',
-				// See dark theme comment above re: bright variant parity.
 				brightBlack: '#666666',
-				brightRed: '#ab2b3f',
-				brightGreen: '#2c7a39',
-				brightYellow: '#966c1e',
-				brightBlue: '#5769f7',
-				brightMagenta: '#ff0087',
-				brightCyan: '#075985',
+				brightRed: '#8a2233',
+				brightGreen: '#235f2c',
+				brightYellow: '#7a5718',
+				brightBlue: '#4355c5',
+				brightMagenta: '#cc006c',
+				brightCyan: '#025270',
 				brightWhite: '#ffffff',
 			};
 		}
@@ -126,30 +122,30 @@ export class ClaudeTerminalView extends ItemView {
 		});
 
 		this.fitAddon = new FitAddon();
-		this.terminal!.loadAddon(this.fitAddon);
-		this.terminal!.open(this.termEl);
+		this.terminal.loadAddon(this.fitAddon);
+		this.terminal.open(this.termEl!);
 
 		const webgl = new WebglAddon();
 		webgl.onContextLoss(() => {
 			webgl.dispose();
 			this.terminal?.loadAddon(new WebglAddon());
 		});
-		this.terminal!.loadAddon(webgl);
+		this.terminal.loadAddon(webgl);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
 		await new Promise<void>(resolve => {
-			if (this.termEl.offsetWidth > 0) { resolve(); return; }
+			if (this.termEl!.offsetWidth > 0) { resolve(); return; }
 			const sizer = new ResizeObserver(() => {
-				if (this.termEl.offsetWidth > 0) { sizer.disconnect(); resolve(); }
+				if (this.termEl?.offsetWidth) { sizer.disconnect(); resolve(); }
 			});
-			sizer.observe(this.termEl);
+			sizer.observe(this.termEl!);
 		});
 		this.fitAddon.fit();
 
 		// Keep fitting on every subsequent panel resize.
-		this.resizeObserver = new ResizeObserver(() => this.fitAddon.fit());
-		this.resizeObserver.observe(this.termEl);
+		this.resizeObserver = new ResizeObserver(() => this.fitAddon?.fit());
+		this.resizeObserver.observe(this.termEl!);
 
 		this.onContextMenu = async (e: MouseEvent) => {
 			e.preventDefault();
@@ -166,7 +162,7 @@ export class ClaudeTerminalView extends ItemView {
 				}
 			}
 		};
-		this.termEl.addEventListener('contextmenu', this.onContextMenu);
+		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
 		await this.spawnShell();
 	}
@@ -191,6 +187,8 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	private async spawnShell(): Promise<void> {
+		const terminal = this.terminal;
+		if (!terminal) return;
 		const vaultPath = this.getVaultPath();
 		if (!vaultPath) {
 			this.showError('Could not determine vault path. This plugin requires a local vault.');
@@ -210,8 +208,8 @@ export class ClaudeTerminalView extends ItemView {
 		try {
 			this.serverProcess = spawn('node', [
 				serverScript,
-				String(this.terminal!.cols),
-				String(this.terminal!.rows),
+				String(terminal.cols),
+				String(terminal.rows),
 				vaultPath,
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
@@ -227,8 +225,8 @@ export class ClaudeTerminalView extends ItemView {
 			while (readBuf.length >= 4) {
 				const len = readBuf.readUInt32BE(0);
 				if (readBuf.length < 4 + len) break;
-				this.terminal?.write(readBuf.slice(4, 4 + len).toString('utf8'));
-				readBuf = readBuf.slice(4 + len);
+				this.terminal?.write(readBuf.subarray(4, 4 + len).toString('utf8'));
+				readBuf = readBuf.subarray(4 + len);
 			}
 		});
 
@@ -250,7 +248,7 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
-		this.terminal!.onData((data: string) => this.sendInput(data));
+		terminal.onData((data: string) => this.sendInput(data));
 
 		// Decouple the PTY resize from xterm's visual resize. xterm may fire
 		// onResize many times per second while the user drags a panel divider;
@@ -262,7 +260,7 @@ export class ClaudeTerminalView extends ItemView {
 		// before that single notification so it sits ahead of ConPTY's response
 		// in xterm's write queue — the clear runs first, then ConPTY's single
 		// clean redraw repopulates the scrollback from its own history.
-		this.terminal!.onResize(() => {
+		terminal.onResize(() => {
 			if (this.ptyResizeTimer) clearTimeout(this.ptyResizeTimer);
 			this.ptyResizeTimer = setTimeout(() => {
 				this.terminal?.write('\x1b[3J');
@@ -308,8 +306,8 @@ export class ClaudeTerminalView extends ItemView {
 		relaunchBtn.addEventListener('click', async () => {
 			relaunchBtn.disabled = true;
 			this.teardownTerminal();
-			this.errorEl.style.display = 'none';
-			this.termEl.style.display = '';
+			this.errorEl!.style.display = 'none';
+			this.termEl!.style.display = '';
 			try {
 				await this.initTerminal();
 			} catch (e) {

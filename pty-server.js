@@ -1,9 +1,13 @@
-'use strict';
-const path = require('path');
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const require = createRequire(import.meta.url);
 const pty = require(path.join(__dirname, 'node_modules', 'node-pty'));
 
-const cols = parseInt(process.argv[2]) || 80;
-const rows = parseInt(process.argv[3]) || 24;
+const cols = Number.parseInt(process.argv[2]) || 80;
+const rows = Number.parseInt(process.argv[3]) || 24;
 const cwd = process.argv[4] || process.cwd();
 // Spawn claude directly so the process exits when claude exits,
 // with no underlying shell left accessible.
@@ -47,14 +51,14 @@ process.stdin.on('data', (chunk) => {
             if (buf.length < 5) break;
             const len = buf.readUInt32BE(1);
             if (buf.length < 5 + len) break;
-            ptyProcess.write(buf.slice(5, 5 + len).toString('utf8'));
-            buf = buf.slice(5 + len);
+            ptyProcess.write(buf.subarray(5, 5 + len).toString('utf8'));
+            buf = buf.subarray(5 + len);
         } else if (type === 1) {
             if (buf.length < 5) break;
             ptyProcess.resize(buf.readUInt16BE(1), buf.readUInt16BE(3));
-            buf = buf.slice(5);
+            buf = buf.subarray(5);
         } else {
-            buf = buf.slice(1);
+            buf = buf.subarray(1);
         }
     }
 });

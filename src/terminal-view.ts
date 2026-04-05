@@ -14,6 +14,7 @@ export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 export class ClaudeTerminalView extends ItemView {
 	private terminal: Terminal | null = null;
 	private fitAddon: FitAddon | null = null;
+	private webLinksAddon: WebLinksAddon | null = null;
 	private termEl: HTMLElement | null = null;
 	private errorEl: HTMLElement | null = null;
 	private serverProcess: ChildProcess | null = null;
@@ -134,12 +135,14 @@ export class ClaudeTerminalView extends ItemView {
 		webgl.onContextLoss(() => {
 			webgl.dispose();
 			this.terminal?.loadAddon(new WebglAddon());
+			// WebLinksAddon is unaffected by WebGL context loss — no need to reload it.
 		});
 		this.terminal.loadAddon(webgl);
 
-		this.terminal.loadAddon(new WebLinksAddon((_, uri) => {
+		this.webLinksAddon = new WebLinksAddon((_, uri) => {
 			window.open(uri, '_blank');
-		}));
+		});
+		this.terminal.loadAddon(this.webLinksAddon);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
@@ -194,6 +197,10 @@ export class ClaudeTerminalView extends ItemView {
 			this.termEl?.removeEventListener('contextmenu', this.onContextMenu);
 			this.onContextMenu = null;
 		}
+		this.fitAddon?.dispose();
+		this.fitAddon = null;
+		this.webLinksAddon?.dispose();
+		this.webLinksAddon = null;
 		this.terminal?.dispose();
 		this.terminal = null;
 		this.termEl?.empty();

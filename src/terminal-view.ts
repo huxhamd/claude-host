@@ -3,6 +3,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
@@ -135,6 +136,10 @@ export class ClaudeTerminalView extends ItemView {
 			this.terminal?.loadAddon(new WebglAddon());
 		});
 		this.terminal.loadAddon(webgl);
+
+		this.terminal.loadAddon(new WebLinksAddon((_, uri) => {
+			window.open(uri, '_blank');
+		}));
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.

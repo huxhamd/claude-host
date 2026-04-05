@@ -139,9 +139,28 @@ export class ClaudeTerminalView extends ItemView {
 		});
 		this.terminal.loadAddon(webgl);
 
-		this.webLinksAddon = new WebLinksAddon((_, uri) => {
-			window.open(uri, '_blank');
-		});
+		let linkTooltip: HTMLElement | null = null;
+
+		this.webLinksAddon = new WebLinksAddon(
+			(event, uri) => {
+				if (event.ctrlKey) {
+					window.open(uri, '_blank');
+				}
+			},
+			{
+				hover(event, uri) {
+					linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
+					linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
+					linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: 'Ctrl+Click to follow link' });
+					linkTooltip.style.left = `${event.clientX + 12}px`;
+					linkTooltip.style.top = `${event.clientY + 16}px`;
+				},
+				leave() {
+					linkTooltip?.remove();
+					linkTooltip = null;
+				},
+			}
+		);
 		this.terminal.loadAddon(this.webLinksAddon);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before

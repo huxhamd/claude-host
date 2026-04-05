@@ -224,6 +224,32 @@
 	background: var(--background-modifier-hover);
 }
 
+.claude-link-tooltip {
+	position: fixed;
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	background: var(--background-modifier-form-field, var(--background-secondary));
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 5px 8px;
+	pointer-events: none;
+	max-width: 400px;
+	word-break: break-all;
+}
+
+.claude-link-tooltip-url {
+	font-size: 0.82em;
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+}
+
+.claude-link-tooltip-hint {
+	font-size: 0.78em;
+	color: var(--text-faint);
+}
+
 .claude-error-details {
 	display: none;
 	background: var(--background-secondary);

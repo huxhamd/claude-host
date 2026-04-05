@@ -22,12 +22,6 @@ export default class ClaudeHostPlugin extends Plugin {
 				this.activateView();
 			},
 		});
-
-		this.app.workspace.onLayoutReady(() => {
-			if (this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length === 0) {
-				this.activateView();
-			}
-		});
 	}
 
 	onunload(): void {

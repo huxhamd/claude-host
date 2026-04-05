@@ -40,15 +40,22 @@ export default class ClaudeHostPlugin extends Plugin {
 		const leaves = workspace.getLeavesOfType(VIEW_TYPE_CLAUDE);
 
 		if (leaves.length === 0) {
-			// Case 1: No session running — create leaf and start Claude Host.
 			const leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf('tab');
-			await leaf.setViewState({ type: VIEW_TYPE_CLAUDE, active: true });
 			workspace.revealLeaf(leaf);
+			await leaf.setViewState({ type: VIEW_TYPE_CLAUDE, active: true });
 			return;
 		}
 
 		const leaf = leaves[0];
 		if (!leaf) return;
+
+		// Guard against a stale leaf whose session has already been torn down
+		// (e.g. closed via the tab context menu but not yet unregistered).
+		if (!(leaf.view instanceof ClaudeTerminalView) || !leaf.view.isSessionRunning) {
+			workspace.revealLeaf(leaf);
+			await leaf.setViewState({ type: VIEW_TYPE_CLAUDE, active: true });
+			return;
+		}
 
 		if (leaf.view.containerEl.isShown()) {
 			// Case 2: Session running and leaf is visible — hide it.

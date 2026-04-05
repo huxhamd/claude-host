@@ -24,6 +24,10 @@ export class ClaudeTerminalView extends ItemView {
 		super(leaf);
 	}
 
+	get isSessionRunning(): boolean {
+		return this.serverProcess !== null;
+	}
+
 	getViewType(): string {
 		return VIEW_TYPE_CLAUDE;
 	}

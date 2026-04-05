@@ -274,7 +274,7 @@ export class ClaudeTerminalView extends ItemView {
 				this.terminal?.write('\x1b[3J');
 				this.sendResize(this.terminal?.cols ?? 80, this.terminal?.rows ?? 24);
 				this.ptyResizeTimer = null;
-			}, 150);
+			}, 50); // ~3 animation frames — enough drag-pause detection with margin for ConPTY IPC
 		});
 	}
 

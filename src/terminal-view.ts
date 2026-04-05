@@ -59,11 +59,6 @@ export class ClaudeTerminalView extends ItemView {
 				this.terminal.options.theme = this.getTerminalTheme();
 			}
 		}));
-
-		// Re-fit after sidebar expand/collapse animations complete.
-		this.registerEvent(this.app.workspace.on('resize', () => {
-			if (this.termEl?.offsetWidth) this.fitAddon?.fit();
-		}));
 	}
 
 	private getTerminalTheme() {

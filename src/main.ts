@@ -46,8 +46,7 @@ export default class ClaudeHostPlugin extends Plugin {
 			return;
 		}
 
-		const leaf = leaves[0];
-		if (!leaf) return;
+		const leaf = leaves[0]!;
 
 		// Guard against a stale leaf whose session has already been torn down
 		// (e.g. closed via the tab context menu but not yet unregistered).

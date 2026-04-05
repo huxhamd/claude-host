@@ -37,7 +37,7 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	getIcon(): string {
-		return 'terminal';
+		return 'claude-logo';
 	}
 
 	async onOpen(): Promise<void> {

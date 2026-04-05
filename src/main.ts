@@ -1,4 +1,4 @@
-import { addIcon, Plugin, WorkspaceLeaf } from 'obsidian';
+import { addIcon, Plugin, WorkspaceLeaf, WorkspaceSidedock } from 'obsidian';
 import { ClaudeTerminalView, VIEW_TYPE_CLAUDE } from './terminal-view';
 
 export default class ClaudeHostPlugin extends Plugin {
@@ -37,13 +37,28 @@ export default class ClaudeHostPlugin extends Plugin {
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;
 
-		let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDE)[0];
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_CLAUDE);
 
-		if (!leaf) {
-			leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf('tab');
+		if (leaves.length === 0) {
+			// Case 1: No session running — create leaf and start Claude Host.
+			const leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf('tab');
 			await leaf.setViewState({ type: VIEW_TYPE_CLAUDE, active: true });
+			workspace.revealLeaf(leaf);
+			return;
 		}
 
-		workspace.revealLeaf(leaf);
+		const leaf = leaves[0];
+		if (!leaf) return;
+
+		if (leaf.view.containerEl.isShown()) {
+			// Case 2: Session running and leaf is visible — hide it.
+			const root = leaf.getRoot();
+			if (root instanceof WorkspaceSidedock) {
+				root.collapse();
+			}
+		} else {
+			// Case 3: Session running but leaf is hidden or inactive — reveal it.
+			workspace.revealLeaf(leaf);
+		}
 	}
 }

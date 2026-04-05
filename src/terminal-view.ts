@@ -55,6 +55,11 @@ export class ClaudeTerminalView extends ItemView {
 				this.terminal.options.theme = this.getTerminalTheme();
 			}
 		}));
+
+		// Re-fit after sidebar expand/collapse animations complete.
+		this.registerEvent(this.app.workspace.on('resize', () => {
+			if (this.termEl?.offsetWidth) this.fitAddon?.fit();
+		}));
 	}
 
 	private getTerminalTheme() {
@@ -143,8 +148,12 @@ export class ClaudeTerminalView extends ItemView {
 		});
 		this.fitAddon.fit();
 
-		// Keep fitting on every subsequent panel resize.
-		this.resizeObserver = new ResizeObserver(() => this.fitAddon?.fit());
+		// Keep fitting on every subsequent panel resize, but only when the
+		// container has real pixel width. Fitting to zero (hidden sidebar)
+		// would shrink the terminal to its minimum size.
+		this.resizeObserver = new ResizeObserver(() => {
+			if (this.termEl?.offsetWidth) this.fitAddon?.fit();
+		});
 		this.resizeObserver.observe(this.termEl!);
 
 		this.onContextMenu = async (e: MouseEvent) => {

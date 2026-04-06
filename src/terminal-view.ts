@@ -21,6 +21,8 @@ export class ClaudeTerminalView extends ItemView {
 	private resizeObserver: ResizeObserver | null = null;
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
+	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
+	private linkTooltip: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
 		super(leaf);
@@ -139,29 +141,35 @@ export class ClaudeTerminalView extends ItemView {
 		});
 		this.terminal.loadAddon(webgl);
 
-		let linkTooltip: HTMLElement | null = null;
-
 		this.webLinksAddon = new WebLinksAddon(
 			(event, uri) => {
-				if (event.ctrlKey) {
+				if (event.ctrlKey || event.metaKey) {
 					window.open(uri, '_blank');
 				}
 			},
 			{
-				hover(event, uri) {
-					linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
-					linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
-					linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: 'Ctrl+Click to follow link' });
-					linkTooltip.style.left = `${event.clientX + 12}px`;
-					linkTooltip.style.top = `${event.clientY + 16}px`;
+				hover: (event, uri) => {
+					this.linkTooltip?.remove();
+					this.linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
+					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
+					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: 'Ctrl+Click to follow link' });
+					this.linkTooltip.style.left = `${event.clientX + 12}px`;
+					this.linkTooltip.style.top = `${event.clientY + 16}px`;
 				},
-				leave() {
-					linkTooltip?.remove();
-					linkTooltip = null;
+				leave: () => {
+					this.linkTooltip?.remove();
+					this.linkTooltip = null;
 				},
 			}
 		);
 		this.terminal.loadAddon(this.webLinksAddon);
+
+		this.onLinkMouseMove = (e: MouseEvent) => {
+			if (!this.linkTooltip) return;
+			this.linkTooltip.style.left = `${e.clientX + 12}px`;
+			this.linkTooltip.style.top = `${e.clientY + 16}px`;
+		};
+		this.termEl!.addEventListener('mousemove', this.onLinkMouseMove);
 
 		// Wait until the Obsidian panel has actual pixel dimensions before
 		// fitting — proposeDimensions() returns undefined until layout is done.
@@ -216,10 +224,16 @@ export class ClaudeTerminalView extends ItemView {
 			this.termEl?.removeEventListener('contextmenu', this.onContextMenu);
 			this.onContextMenu = null;
 		}
+		if (this.onLinkMouseMove) {
+			this.termEl?.removeEventListener('mousemove', this.onLinkMouseMove);
+			this.onLinkMouseMove = null;
+		}
 		this.fitAddon?.dispose();
 		this.fitAddon = null;
 		this.webLinksAddon?.dispose();
 		this.webLinksAddon = null;
+		this.linkTooltip?.remove();
+		this.linkTooltip = null;
 		this.terminal?.dispose();
 		this.terminal = null;
 		this.termEl?.empty();

@@ -168,7 +168,8 @@ export class ClaudeTerminalView extends ItemView {
 					this.linkTooltip?.remove();
 					this.linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
 					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
-					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: 'Ctrl+Click to follow link' });
+					const modifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
+					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: `${modifier}+Click to follow link` });
 					this.positionLinkTooltip(event.clientX, event.clientY);
 				},
 				leave: () => {

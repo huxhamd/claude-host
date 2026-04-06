@@ -65,6 +65,22 @@ export class ClaudeTerminalView extends ItemView {
 		}));
 	}
 
+	private positionLinkTooltip(x: number, y: number): void {
+		if (!this.linkTooltip) return;
+		const offset = 12;
+		const minWidth = 200;
+		const maxWidth = 400;
+		const available = window.innerWidth - (x + offset);
+		this.linkTooltip.style.maxWidth = `${Math.max(minWidth, Math.min(maxWidth, available))}px`;
+		const left = Math.min(x + offset, window.innerWidth - minWidth);
+		this.linkTooltip.style.left = `${left}px`;
+		const belowY = y + 16;
+		this.linkTooltip.style.top = `${belowY}px`;
+		if (belowY + this.linkTooltip.offsetHeight > window.innerHeight) {
+			this.linkTooltip.style.top = `${y - this.linkTooltip.offsetHeight - 8}px`;
+		}
+	}
+
 	private getTerminalTheme() {
 		const isDark = document.body.classList.contains('theme-dark');
 		const bg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim();
@@ -153,8 +169,7 @@ export class ClaudeTerminalView extends ItemView {
 					this.linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
 					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
 					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: 'Ctrl+Click to follow link' });
-					this.linkTooltip.style.left = `${event.clientX + 12}px`;
-					this.linkTooltip.style.top = `${event.clientY + 16}px`;
+					this.positionLinkTooltip(event.clientX, event.clientY);
 				},
 				leave: () => {
 					this.linkTooltip?.remove();
@@ -166,8 +181,7 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.onLinkMouseMove = (e: MouseEvent) => {
 			if (!this.linkTooltip) return;
-			this.linkTooltip.style.left = `${e.clientX + 12}px`;
-			this.linkTooltip.style.top = `${e.clientY + 16}px`;
+			this.positionLinkTooltip(e.clientX, e.clientY);
 		};
 		this.termEl!.addEventListener('mousemove', this.onLinkMouseMove);
 

@@ -23,10 +23,13 @@ export class ClaudeTerminalView extends ItemView {
 	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
 	private onClipboardKey: ((e: KeyboardEvent) => boolean) | null = null;
+	private onDragMouseDown: ((e: MouseEvent) => void) | null = null;
 	private linkTooltip: HTMLElement | null = null;
 	private selectionAnchor: { col: number; row: number } | null = null;
 	private selectionActive: { col: number; row: number } | null = null;
 	private isUpdatingSelection = false;
+	private dragStartX = 0;
+	private dragStartY = 0;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
@@ -226,6 +229,14 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
+		// Record mousedown position so Shift+Arrow can identify which end of the selection
+		// was the drag origin (anchor) regardless of where the mouse travels afterwards.
+		this.onDragMouseDown = (e: MouseEvent) => {
+			this.dragStartX = e.clientX;
+			this.dragStartY = e.clientY;
+		};
+		this.termEl!.addEventListener('mousedown', this.onDragMouseDown);
+
 		this.terminal.onSelectionChange(() => {
 			if (!this.isUpdatingSelection) {
 				this.selectionAnchor = null;
@@ -295,6 +306,10 @@ export class ClaudeTerminalView extends ItemView {
 			this.onLinkMouseMove = null;
 		}
 		this.onClipboardKey = null; // cleared by terminal.dispose() below; nulled here for consistency
+		this.onDragMouseDown = null; // removed implicitly when termEl is emptied below
+		this.selectionAnchor = null;
+		this.selectionActive = null;
+		this.isUpdatingSelection = false;
 		this.fitAddon?.dispose();
 		this.fitAddon = null;
 		this.webLinksAddon?.dispose();
@@ -390,27 +405,50 @@ export class ClaudeTerminalView extends ItemView {
 		});
 	}
 
+	private initSelectionEndpoints(buffer: import('@xterm/xterm').IBuffer): void {
+		const pos = this.terminal!.getSelectionPosition();
+		if (pos) {
+			// Despite the type definition claiming 1-based, the xterm.js implementation
+			// returns raw 0-based buffer coordinates matching what select() expects.
+			// getSelectionPosition() always returns geometrically ordered start/end regardless
+			// of drag direction. Reconstruct the drag-origin cell from the recorded mousedown
+			// pixel position and use proximity to decide which end was the anchor.
+			const cols = this.terminal!.cols;
+			const rect = this.termEl!.getBoundingClientRect();
+			const charW = rect.width  / cols;
+			const charH = rect.height / this.terminal!.rows;
+			const downCol = Math.round((this.dragStartX - rect.left) / charW);
+			const downRow = Math.round((this.dragStartY - rect.top)  / charH) + buffer.viewportY;
+			const downLinear = downRow * cols + downCol;
+			const startLinear = pos.start.y * cols + pos.start.x;
+			const endLinear   = pos.end.y   * cols + pos.end.x;
+			// Whichever end is closer to the mousedown cell is the anchor.
+			const anchorAtEnd = Math.abs(downLinear - endLinear) < Math.abs(downLinear - startLinear);
+			const anchor = anchorAtEnd ? pos.end   : pos.start;
+			const active = anchorAtEnd ? pos.start : pos.end;
+			this.selectionAnchor = { col: anchor.x, row: anchor.y };
+			this.selectionActive = { col: active.x, row: active.y };
+		} else {
+			const row = buffer.baseY + buffer.cursorY;
+			this.selectionAnchor = { col: buffer.cursorX, row };
+			this.selectionActive = { col: buffer.cursorX, row };
+		}
+	}
+
 	private handleShiftArrow(key: string): boolean {
 		if (!this.terminal) return true;
 		const cols = this.terminal.cols;
 		const buffer = this.terminal.buffer.active;
 
 		if (!this.selectionAnchor || !this.selectionActive) {
-			const pos = this.terminal.getSelectionPosition();
-			if (pos) {
-				// Despite the type definition claiming 1-based, the xterm.js implementation
-				// returns raw 0-based buffer coordinates matching what select() expects
-				this.selectionAnchor = { col: pos.start.x, row: pos.start.y };
-				this.selectionActive = { col: pos.end.x, row: pos.end.y };
-			} else {
-				const cursorRow = buffer.baseY + buffer.cursorY;
-				const cursorCol = buffer.cursorX;
-				this.selectionAnchor = { col: cursorCol, row: cursorRow };
-				this.selectionActive = { col: cursorCol, row: cursorRow };
-			}
+			this.initSelectionEndpoints(buffer);
 		}
 
-		let { col, row } = this.selectionActive;
+		// Compare positions linearly (row * cols + col) to detect side-of-anchor before moving
+		const anchorLinear = this.selectionAnchor!.row * cols + this.selectionAnchor!.col;
+		const oldActiveLinear = this.selectionActive!.row * cols + this.selectionActive!.col;
+
+		let { col, row } = this.selectionActive!;
 		switch (key) {
 			case 'ArrowRight':
 				col++;
@@ -423,11 +461,21 @@ export class ClaudeTerminalView extends ItemView {
 			case 'ArrowDown': row++; break;
 			case 'ArrowUp':   row--; break;
 		}
-		row = Math.max(0, row);
+		row = Math.max(0, Math.min(buffer.length - 1, row));
 		col = Math.max(0, Math.min(cols - 1, col));
+
+		const newActiveLinear = row * cols + col;
+
+		// When active crosses from strictly past the anchor to at-or-before it (or vice versa),
+		// flip the anchor to the old active position. This mirrors the behaviour in most editors
+		// where reversing direction past the fixed end re-anchors at the far side of the selection.
+		if ((oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
+			this.selectionAnchor = { col: this.selectionActive!.col, row: this.selectionActive!.row };
+		}
+
 		this.selectionActive = { col, row };
 
-		const anchor = this.selectionAnchor;
+		const anchor = this.selectionAnchor!;
 		const active = this.selectionActive;
 		let startCol: number, startRow: number, endCol: number, endRow: number;
 		if (anchor.row < active.row || (anchor.row === active.row && anchor.col <= active.col)) {
@@ -439,6 +487,8 @@ export class ClaudeTerminalView extends ItemView {
 		}
 
 		const length = (endRow - startRow) * cols + (endCol - startCol);
+		// onSelectionChange fires synchronously inside select(), so isUpdatingSelection
+		// is already false again before any external observer could act on the event.
 		this.isUpdatingSelection = true;
 		if (length > 0) {
 			this.terminal.select(startCol, startRow, length);

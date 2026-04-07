@@ -222,6 +222,39 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
+		// Intercept clipboard keyboard shortcuts. Returning false prevents xterm
+		// from forwarding the key to the PTY; returning true lets it pass through.
+		this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+			const isMod = e.ctrlKey || e.metaKey;
+			if (!isMod) return true;
+
+			if (e.type === 'keydown') {
+				if (e.key === 'c' || e.key === 'C') {
+					const selection = this.terminal?.getSelection();
+					if (selection) {
+						navigator.clipboard.writeText(selection);
+						return false; // consume — do not send as SIGINT
+					}
+					return true; // no selection → pass through as SIGINT
+				}
+				if (e.key === 'x' || e.key === 'X') {
+					const selection = this.terminal?.getSelection();
+					if (selection) {
+						navigator.clipboard.writeText(selection);
+						this.terminal?.clearSelection();
+						return false;
+					}
+					return true;
+				}
+				if (e.key === 'v' || e.key === 'V') {
+					// Return false to suppress the raw keycode being sent to the PTY.
+					// xterm's native paste event listener handles the actual paste.
+					return false;
+				}
+			}
+			return true;
+		});
+
 		await this.spawnShell();
 	}
 

@@ -24,6 +24,9 @@ export class ClaudeTerminalView extends ItemView {
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
 	private onClipboardKey: ((e: KeyboardEvent) => boolean) | null = null;
 	private linkTooltip: HTMLElement | null = null;
+	private selectionAnchor: { col: number; row: number } | null = null;
+	private selectionActive: { col: number; row: number } | null = null;
+	private isUpdatingSelection = false;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
@@ -223,9 +226,22 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
+		this.terminal.onSelectionChange(() => {
+			if (!this.isUpdatingSelection) {
+				this.selectionAnchor = null;
+				this.selectionActive = null;
+			}
+		});
+
 		// Intercept clipboard keyboard shortcuts. Returning false prevents xterm
 		// from forwarding the key to the PTY; returning true lets it pass through.
 		this.onClipboardKey = (e: KeyboardEvent) => {
+			if (e.type === 'keydown' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+				if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+					return this.handleShiftArrow(e.key);
+				}
+			}
+
 			const isMod = e.ctrlKey || e.metaKey;
 			if (!isMod) return true;
 
@@ -372,6 +388,65 @@ export class ClaudeTerminalView extends ItemView {
 				this.ptyResizeTimer = null;
 			}, 50); // ~3 animation frames — enough drag-pause detection with margin for ConPTY IPC
 		});
+	}
+
+	private handleShiftArrow(key: string): boolean {
+		if (!this.terminal) return true;
+		const cols = this.terminal.cols;
+		const buffer = this.terminal.buffer.active;
+
+		if (!this.selectionAnchor || !this.selectionActive) {
+			const pos = this.terminal.getSelectionPosition();
+			if (pos) {
+				// Despite the type definition claiming 1-based, the xterm.js implementation
+				// returns raw 0-based buffer coordinates matching what select() expects
+				this.selectionAnchor = { col: pos.start.x, row: pos.start.y };
+				this.selectionActive = { col: pos.end.x, row: pos.end.y };
+			} else {
+				const cursorRow = buffer.baseY + buffer.cursorY;
+				const cursorCol = buffer.cursorX;
+				this.selectionAnchor = { col: cursorCol, row: cursorRow };
+				this.selectionActive = { col: cursorCol, row: cursorRow };
+			}
+		}
+
+		let { col, row } = this.selectionActive;
+		switch (key) {
+			case 'ArrowRight':
+				col++;
+				if (col >= cols) { col = 0; row++; }
+				break;
+			case 'ArrowLeft':
+				col--;
+				if (col < 0) { col = cols - 1; row--; }
+				break;
+			case 'ArrowDown': row++; break;
+			case 'ArrowUp':   row--; break;
+		}
+		row = Math.max(0, row);
+		col = Math.max(0, Math.min(cols - 1, col));
+		this.selectionActive = { col, row };
+
+		const anchor = this.selectionAnchor;
+		const active = this.selectionActive;
+		let startCol: number, startRow: number, endCol: number, endRow: number;
+		if (anchor.row < active.row || (anchor.row === active.row && anchor.col <= active.col)) {
+			startCol = anchor.col; startRow = anchor.row;
+			endCol = active.col;   endRow = active.row;
+		} else {
+			startCol = active.col; startRow = active.row;
+			endCol = anchor.col;   endRow = anchor.row;
+		}
+
+		const length = (endRow - startRow) * cols + (endCol - startCol);
+		this.isUpdatingSelection = true;
+		if (length > 0) {
+			this.terminal.select(startCol, startRow, length);
+		} else {
+			this.terminal.clearSelection();
+		}
+		this.isUpdatingSelection = false;
+		return false;
 	}
 
 	private sendInput(data: string): void {

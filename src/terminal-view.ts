@@ -22,6 +22,7 @@ export class ClaudeTerminalView extends ItemView {
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
+	private onClipboardKey: ((e: KeyboardEvent) => boolean) | null = null;
 	private linkTooltip: HTMLElement | null = null;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
@@ -222,6 +223,40 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
+		// Intercept clipboard keyboard shortcuts. Returning false prevents xterm
+		// from forwarding the key to the PTY; returning true lets it pass through.
+		this.onClipboardKey = (e: KeyboardEvent) => {
+			const isMod = e.ctrlKey || e.metaKey;
+			if (!isMod) return true;
+
+			if (e.type === 'keydown') {
+				if (e.key === 'c') {
+					const selection = this.terminal?.getSelection();
+					if (selection) {
+						navigator.clipboard.writeText(selection).catch(() => {});
+						return false; // consume — do not send as SIGINT
+					}
+					return true; // no selection → pass through as SIGINT
+				}
+				if (e.key === 'x') {
+					const selection = this.terminal?.getSelection();
+					if (selection) {
+						navigator.clipboard.writeText(selection).catch(() => {});
+						this.terminal?.clearSelection();
+						return false;
+					}
+					return true;
+				}
+				if (e.key === 'v') {
+					// Return false to suppress the raw keycode being sent to the PTY.
+					// xterm's native paste event listener handles the actual paste.
+					return false;
+				}
+			}
+			return true;
+		};
+		this.terminal.attachCustomKeyEventHandler(this.onClipboardKey);
+
 		await this.spawnShell();
 	}
 
@@ -243,6 +278,7 @@ export class ClaudeTerminalView extends ItemView {
 			this.termEl?.removeEventListener('mousemove', this.onLinkMouseMove);
 			this.onLinkMouseMove = null;
 		}
+		this.onClipboardKey = null; // cleared by terminal.dispose() below; nulled here for consistency
 		this.fitAddon?.dispose();
 		this.fitAddon = null;
 		this.webLinksAddon?.dispose();

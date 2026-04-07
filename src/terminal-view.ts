@@ -23,6 +23,7 @@ export class ClaudeTerminalView extends ItemView {
 	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
 	private linkTooltip: HTMLElement | null = null;
+	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
 		super(leaf);
@@ -168,8 +169,7 @@ export class ClaudeTerminalView extends ItemView {
 					this.linkTooltip?.remove();
 					this.linkTooltip = document.body.createEl('div', { cls: 'claude-link-tooltip' });
 					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-url', text: uri });
-					const modifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
-					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: `${modifier}+Click to follow link` });
+					this.linkTooltip.createEl('span', { cls: 'claude-link-tooltip-hint', text: `${this.linkModifier}+Click to follow link` });
 					this.positionLinkTooltip(event.clientX, event.clientY);
 				},
 				leave: () => {

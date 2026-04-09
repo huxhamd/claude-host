@@ -24,11 +24,14 @@ export class ClaudeTerminalView extends ItemView {
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
 	private onClipboardKey: ((e: KeyboardEvent) => boolean) | null = null;
 	private onDragMouseDown: ((e: MouseEvent) => void) | null = null;
+	private onDragMouseMove: ((e: MouseEvent) => void) | null = null;
 	private linkTooltip: HTMLElement | null = null;
 	private selectionAnchor: { col: number; row: number } | null = null;
 	private selectionActive: { col: number; row: number } | null = null;
 	private isUpdatingSelection = false;
 	private dragStartPixel: { x: number; y: number } | null = null;
+	private lastMouseMovePixel: { x: number; y: number } | null = null;
+	private selectionDragReversed = false;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
@@ -228,18 +231,38 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
-		// On mousedown, record the raw pixel position of the drag origin.
-		// initSelectionEndpoints converts selection endpoints to pixels and
-		// picks the nearer one as anchor — no cell-rounding ambiguity.
+		// Record the mousedown pixel and track the latest mousemove pixel.
+		// On each selectionChange, compute drag direction from mousedown vs
+		// the last mousemove — this captures the real-time direction at the
+		// moment the selection actually changed, immune to post-drag parking.
 		this.onDragMouseDown = (e: MouseEvent) => {
 			this.dragStartPixel = { x: e.clientX, y: e.clientY };
+			this.lastMouseMovePixel = null;
+			this.selectionDragReversed = false;
 		};
 		this.termEl!.addEventListener('mousedown', this.onDragMouseDown);
 
+		this.onDragMouseMove = (e: MouseEvent) => {
+			this.lastMouseMovePixel = { x: e.clientX, y: e.clientY };
+		};
+		this.termEl!.addEventListener('mousemove', this.onDragMouseMove);
+
 		this.terminal.onSelectionChange(() => {
-			if (!this.isUpdatingSelection) {
-				this.selectionAnchor = null;
-				this.selectionActive = null;
+			if (this.isUpdatingSelection) return;
+			this.selectionAnchor = null;
+			this.selectionActive = null;
+			// Determine drag direction at the moment the selection changes.
+			if (this.dragStartPixel && this.lastMouseMovePixel && this.termEl && this.terminal) {
+				const lineH = this.termEl.getBoundingClientRect().height / this.terminal.rows;
+				const dy = this.lastMouseMovePixel.y - this.dragStartPixel.y;
+				if (dy < -lineH / 2) {
+					this.selectionDragReversed = true;
+				} else if (dy > lineH / 2) {
+					this.selectionDragReversed = false;
+				} else {
+					// Same row — use horizontal direction
+					this.selectionDragReversed = this.lastMouseMovePixel.x < this.dragStartPixel.x;
+				}
 			}
 		});
 
@@ -306,10 +329,16 @@ export class ClaudeTerminalView extends ItemView {
 		}
 		this.onClipboardKey = null; // cleared by terminal.dispose() below; nulled here for consistency
 		this.onDragMouseDown = null; // removed implicitly when termEl is emptied below
+		if (this.onDragMouseMove) {
+			this.termEl?.removeEventListener('mousemove', this.onDragMouseMove);
+			this.onDragMouseMove = null;
+		}
 		this.selectionAnchor = null;
 		this.selectionActive = null;
 		this.isUpdatingSelection = false;
 		this.dragStartPixel = null;
+		this.lastMouseMovePixel = null;
+		this.selectionDragReversed = false;
 		this.fitAddon?.dispose();
 		this.fitAddon = null;
 		this.webLinksAddon?.dispose();
@@ -407,23 +436,15 @@ export class ClaudeTerminalView extends ItemView {
 
 	private initSelectionEndpoints(): boolean {
 		const pos = this.terminal!.getSelectionPosition();
-		if (!pos || !this.dragStartPixel || !this.termEl) return false;
+		if (!pos) return false;
 		// getSelectionPosition() returns geometrically ordered start/end regardless of
-		// drag direction. Convert both endpoints to pixel coordinates and compare
-		// against the raw mousedown pixel position to determine which end is the anchor.
-		const rect = this.termEl.getBoundingClientRect();
-		const charW = rect.width / this.terminal!.cols;
-		const lineH = rect.height / this.terminal!.rows;
-		const viewportY = this.terminal!.buffer.active.viewportY;
-		const startPx = { x: rect.left + pos.start.x * charW, y: rect.top + (pos.start.y - viewportY) * lineH };
-		const endPx   = { x: rect.left + pos.end.x   * charW, y: rect.top + (pos.end.y   - viewportY) * lineH };
-		const dStart = (this.dragStartPixel.x - startPx.x) ** 2 + (this.dragStartPixel.y - startPx.y) ** 2;
-		const dEnd   = (this.dragStartPixel.x - endPx.x)   ** 2 + (this.dragStartPixel.y - endPx.y)   ** 2;
-		const reversed = dEnd < dStart;
-		this.selectionAnchor = reversed ? { col: pos.end.x,   row: pos.end.y   }
-		                                : { col: pos.start.x, row: pos.start.y };
-		this.selectionActive = reversed ? { col: pos.start.x, row: pos.start.y }
-		                                : { col: pos.end.x,   row: pos.end.y   };
+		// drag direction. selectionDragReversed was computed in onSelectionChange by
+		// comparing mousedown vs the last mousemove pixel at the moment the selection
+		// changed — immune to post-drag mouse parking.
+		this.selectionAnchor = this.selectionDragReversed ? { col: pos.end.x,   row: pos.end.y   }
+		                                                  : { col: pos.start.x, row: pos.start.y };
+		this.selectionActive = this.selectionDragReversed ? { col: pos.start.x, row: pos.start.y }
+		                                                  : { col: pos.end.x,   row: pos.end.y   };
 		return true;
 	}
 

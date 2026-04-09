@@ -28,8 +28,7 @@ export class ClaudeTerminalView extends ItemView {
 	private selectionAnchor: { col: number; row: number } | null = null;
 	private selectionActive: { col: number; row: number } | null = null;
 	private isUpdatingSelection = false;
-	private dragStartX = 0;
-	private dragStartY = 0;
+	private dragStartPixel: { x: number; y: number } | null = null;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
@@ -229,11 +228,11 @@ export class ClaudeTerminalView extends ItemView {
 		};
 		this.termEl!.addEventListener('contextmenu', this.onContextMenu);
 
-		// Record mousedown position so Shift+Arrow can identify which end of the selection
-		// was the drag origin (anchor) regardless of where the mouse travels afterwards.
+		// On mousedown, record the raw pixel position of the drag origin.
+		// initSelectionEndpoints converts selection endpoints to pixels and
+		// picks the nearer one as anchor — no cell-rounding ambiguity.
 		this.onDragMouseDown = (e: MouseEvent) => {
-			this.dragStartX = e.clientX;
-			this.dragStartY = e.clientY;
+			this.dragStartPixel = { x: e.clientX, y: e.clientY };
 		};
 		this.termEl!.addEventListener('mousedown', this.onDragMouseDown);
 
@@ -310,6 +309,7 @@ export class ClaudeTerminalView extends ItemView {
 		this.selectionAnchor = null;
 		this.selectionActive = null;
 		this.isUpdatingSelection = false;
+		this.dragStartPixel = null;
 		this.fitAddon?.dispose();
 		this.fitAddon = null;
 		this.webLinksAddon?.dispose();
@@ -405,44 +405,42 @@ export class ClaudeTerminalView extends ItemView {
 		});
 	}
 
-	private initSelectionEndpoints(buffer: import('@xterm/xterm').IBuffer): void {
+	private initSelectionEndpoints(): boolean {
 		const pos = this.terminal!.getSelectionPosition();
-		if (pos) {
-			// Despite the type definition claiming 1-based, the xterm.js implementation
-			// returns raw 0-based buffer coordinates matching what select() expects.
-			// getSelectionPosition() always returns geometrically ordered start/end regardless
-			// of drag direction. Reconstruct the drag-origin cell from the recorded mousedown
-			// pixel position and use proximity to decide which end was the anchor.
-			const cols = this.terminal!.cols;
-			const rect = this.termEl!.getBoundingClientRect();
-			const charW = rect.width  / cols;
-			const charH = rect.height / this.terminal!.rows;
-			const downCol = Math.round((this.dragStartX - rect.left) / charW);
-			const downRow = Math.round((this.dragStartY - rect.top)  / charH) + buffer.viewportY;
-			const downLinear = downRow * cols + downCol;
-			const startLinear = pos.start.y * cols + pos.start.x;
-			const endLinear   = pos.end.y   * cols + pos.end.x;
-			// Whichever end is closer to the mousedown cell is the anchor.
-			const anchorAtEnd = Math.abs(downLinear - endLinear) < Math.abs(downLinear - startLinear);
-			const anchor = anchorAtEnd ? pos.end   : pos.start;
-			const active = anchorAtEnd ? pos.start : pos.end;
-			this.selectionAnchor = { col: anchor.x, row: anchor.y };
-			this.selectionActive = { col: active.x, row: active.y };
-		} else {
-			const row = buffer.baseY + buffer.cursorY;
-			this.selectionAnchor = { col: buffer.cursorX, row };
-			this.selectionActive = { col: buffer.cursorX, row };
-		}
+		if (!pos || !this.dragStartPixel || !this.termEl) return false;
+		// getSelectionPosition() returns geometrically ordered start/end regardless of
+		// drag direction. Convert both endpoints to pixel coordinates and compare
+		// against the raw mousedown pixel position to determine which end is the anchor.
+		const rect = this.termEl.getBoundingClientRect();
+		const charW = rect.width / this.terminal!.cols;
+		const lineH = rect.height / this.terminal!.rows;
+		const viewportY = this.terminal!.buffer.active.viewportY;
+		const startPx = { x: rect.left + pos.start.x * charW, y: rect.top + (pos.start.y - viewportY) * lineH };
+		const endPx   = { x: rect.left + pos.end.x   * charW, y: rect.top + (pos.end.y   - viewportY) * lineH };
+		const dStart = (this.dragStartPixel.x - startPx.x) ** 2 + (this.dragStartPixel.y - startPx.y) ** 2;
+		const dEnd   = (this.dragStartPixel.x - endPx.x)   ** 2 + (this.dragStartPixel.y - endPx.y)   ** 2;
+		const reversed = dEnd < dStart;
+		this.selectionAnchor = reversed ? { col: pos.end.x,   row: pos.end.y   }
+		                                : { col: pos.start.x, row: pos.start.y };
+		this.selectionActive = reversed ? { col: pos.start.x, row: pos.start.y }
+		                                : { col: pos.end.x,   row: pos.end.y   };
+		return true;
 	}
 
 	private handleShiftArrow(key: string): boolean {
 		if (!this.terminal) return true;
+		if (!this.selectionAnchor || !this.selectionActive) {
+			// No existing selection — Shift+Arrow cannot open a new one.
+			// Only extend an already-active mouse selection.
+			if (!this.initSelectionEndpoints()) return false;
+		}
+		return this.applyShiftArrowStep(key);
+	}
+
+	private applyShiftArrowStep(key: string): boolean {
+		if (!this.terminal) return true;
 		const cols = this.terminal.cols;
 		const buffer = this.terminal.buffer.active;
-
-		if (!this.selectionAnchor || !this.selectionActive) {
-			this.initSelectionEndpoints(buffer);
-		}
 
 		// Compare positions linearly (row * cols + col) to detect side-of-anchor before moving
 		const anchorLinear = this.selectionAnchor!.row * cols + this.selectionAnchor!.col;
@@ -466,10 +464,11 @@ export class ClaudeTerminalView extends ItemView {
 
 		const newActiveLinear = row * cols + col;
 
-		// When active crosses from strictly past the anchor to at-or-before it (or vice versa),
-		// flip the anchor to the old active position. This mirrors the behaviour in most editors
-		// where reversing direction past the fixed end re-anchors at the far side of the selection.
-		if ((oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
+		// When active strictly crosses the anchor (not merely reaches it), flip the anchor to the
+		// old active position. This mirrors the behaviour in most editors where reversing direction
+		// past the fixed end re-anchors at the far side of the selection.
+		// newActiveLinear === anchorLinear means the selection collapsed to zero — no flip needed.
+		if (newActiveLinear !== anchorLinear && (oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
 			this.selectionAnchor = { col: this.selectionActive!.col, row: this.selectionActive!.row };
 		}
 
@@ -487,8 +486,6 @@ export class ClaudeTerminalView extends ItemView {
 		}
 
 		const length = (endRow - startRow) * cols + (endCol - startCol);
-		// onSelectionChange fires synchronously inside select(), so isUpdatingSelection
-		// is already false again before any external observer could act on the event.
 		this.isUpdatingSelection = true;
 		if (length > 0) {
 			this.terminal.select(startCol, startRow, length);

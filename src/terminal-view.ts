@@ -12,6 +12,15 @@ import { promises as fs } from 'fs';
 export const VIEW_TYPE_CLAUDE = 'claude-terminal';
 
 export class ClaudeTerminalView extends ItemView {
+	private static readonly ESC = String.fromCharCode(27);
+	private static readonly BEL = String.fromCharCode(7);
+	private static readonly ANSI_RE = new RegExp(
+		ClaudeTerminalView.ESC + '(?:\\[[0-9;?]*[A-Za-z]|\\][^'
+		+ ClaudeTerminalView.BEL + ClaudeTerminalView.ESC
+		+ ']*(?:' + ClaudeTerminalView.BEL + '|' + ClaudeTerminalView.ESC + '\\\\)|.)',
+		'g'
+	);
+
 	private terminal: Terminal | null = null;
 	private fitAddon: FitAddon | null = null;
 	private webLinksAddon: WebLinksAddon | null = null;
@@ -394,6 +403,7 @@ export class ClaudeTerminalView extends ItemView {
 				const data = readBuf.subarray(4, 4 + len).toString('utf8');
 				if (this.loadingEl && this.isReadyToShow(data)) {
 					this.loadingEl.style.display = 'none';
+					this.loadingEl = null;
 				}
 				this.terminal?.write(data);
 				readBuf = readBuf.subarray(4 + len);
@@ -608,17 +618,9 @@ export class ClaudeTerminalView extends ItemView {
 	// Option B: TUI entered the alternate screen buffer — the app is rendering.
 	// Option A fallback: strip ANSI escape sequences; if visible text remains,
 	//                    the process has produced real output.
-	// The regex is constructed via String.fromCharCode to avoid embedding
-	// literal control characters in source (ESC = 27, BEL = 7).
 	private isReadyToShow(data: string): boolean {
-		const ESC = String.fromCharCode(27);
-		const BEL = String.fromCharCode(7);
-		if (data.includes(ESC + '[?1049h')) return true;
-		const ansiRe = new RegExp(
-			ESC + '(?:\\[[0-9;?]*[A-Za-z]|\\][^' + BEL + ESC + ']*(?:' + BEL + '|' + ESC + '\\\\)|.)',
-			'g'
-		);
-		return /\S/.test(data.replace(ansiRe, ''));
+		if (data.includes(ClaudeTerminalView.ESC + '[?1049h')) return true;
+		return /\S/.test(data.replace(ClaudeTerminalView.ANSI_RE, ''));
 	}
 
 	private showError(message: string, details?: string): void {

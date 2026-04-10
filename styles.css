@@ -7,6 +7,7 @@
 	padding: 0 !important;
 	overflow: hidden;
 	background-color: var(--background-primary);
+	position: relative;
 }
 
 .claude-terminal-el {
@@ -145,6 +146,51 @@
 	top: 0;
 	right: 0;
 	pointer-events: none;
+}
+
+.claude-loading-panel {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: var(--background-primary);
+	z-index: 10;
+}
+
+.claude-loading-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+}
+
+.claude-loading-name {
+	font-size: 1.56em;
+	color: var(--text-normal);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	margin: 0;
+}
+
+.claude-loading-status {
+	font-size: 0.88em;
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.claude-loading-spinner {
+	width: 24px;
+	height: 24px;
+	border: 2.5px solid transparent;
+	border-top-color: #DA7756;
+	border-radius: 50%;
+	animation: claude-spinner-rotate 0.8s linear infinite;
+	margin-top: 8px;
+}
+
+@keyframes claude-spinner-rotate {
+	to { transform: rotate(360deg); }
 }
 
 .claude-error-panel {

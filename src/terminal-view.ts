@@ -17,6 +17,7 @@ export class ClaudeTerminalView extends ItemView {
 	private webLinksAddon: WebLinksAddon | null = null;
 	private termEl: HTMLElement | null = null;
 	private errorEl: HTMLElement | null = null;
+	private loadingEl: HTMLElement | null = null;
 	private serverProcess: ChildProcess | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -62,6 +63,12 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.termEl = container.createDiv({ cls: 'claude-terminal-el' });
 		this.errorEl = container.createDiv({ cls: 'claude-error-panel' });
+
+		this.loadingEl = container.createDiv({ cls: 'claude-loading-panel' });
+		const loadingContent = this.loadingEl.createDiv({ cls: 'claude-loading-content' });
+		loadingContent.createEl('p', { cls: 'claude-loading-name', text: 'Claude Host' });
+		loadingContent.createEl('p', { cls: 'claude-loading-status', text: 'Loading...' });
+		loadingContent.createDiv({ cls: 'claude-loading-spinner' });
 
 		try {
 			await this.initTerminal();
@@ -148,6 +155,8 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	private async initTerminal(): Promise<void> {
+		if (this.loadingEl) this.loadingEl.style.display = 'flex';
+
 		this.terminal = new Terminal({
 			cursorBlink: true,
 			fontSize: 13,
@@ -382,7 +391,11 @@ export class ClaudeTerminalView extends ItemView {
 			while (readBuf.length >= 4) {
 				const len = readBuf.readUInt32BE(0);
 				if (readBuf.length < 4 + len) break;
-				this.terminal?.write(readBuf.subarray(4, 4 + len).toString('utf8'));
+				const data = readBuf.subarray(4, 4 + len).toString('utf8');
+				if (this.loadingEl && this.isReadyToShow(data)) {
+					this.loadingEl.style.display = 'none';
+				}
+				this.terminal?.write(data);
 				readBuf = readBuf.subarray(4 + len);
 			}
 		});
@@ -592,8 +605,25 @@ export class ClaudeTerminalView extends ItemView {
 		this.serverProcess.stdin.write(msg);
 	}
 
+	// Option B: TUI entered the alternate screen buffer — the app is rendering.
+	// Option A fallback: strip ANSI escape sequences; if visible text remains,
+	//                    the process has produced real output.
+	// The regex is constructed via String.fromCharCode to avoid embedding
+	// literal control characters in source (ESC = 27, BEL = 7).
+	private isReadyToShow(data: string): boolean {
+		const ESC = String.fromCharCode(27);
+		const BEL = String.fromCharCode(7);
+		if (data.includes(ESC + '[?1049h')) return true;
+		const ansiRe = new RegExp(
+			ESC + '(?:\\[[0-9;?]*[A-Za-z]|\\][^' + BEL + ESC + ']*(?:' + BEL + '|' + ESC + '\\\\)|.)',
+			'g'
+		);
+		return /\S/.test(data.replace(ansiRe, ''));
+	}
+
 	private showError(message: string, details?: string): void {
 		if (!this.termEl || !this.errorEl) return;
+		if (this.loadingEl) this.loadingEl.style.display = 'none';
 		this.termEl.style.display = 'none';
 		this.errorEl.style.display = 'flex';
 		this.errorEl.empty();

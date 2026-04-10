@@ -210,8 +210,14 @@ export class ClaudeTerminalView extends ItemView {
 		// Keep fitting on every subsequent panel resize, but only when the
 		// container has real pixel width. Fitting to zero (hidden sidebar)
 		// would shrink the terminal to its minimum size.
+		// Any active selection is cleared — xterm reflows the buffer on resize,
+		// so our stored anchor/active row/col coordinates would no longer point
+		// at the intended characters.
 		this.resizeObserver = new ResizeObserver(() => {
-			if (this.termEl?.offsetWidth) this.fitAddon?.fit();
+			if (this.termEl?.offsetWidth) {
+				this.terminal?.clearSelection();
+				this.fitAddon?.fit();
+			}
 		});
 		this.resizeObserver.observe(this.termEl!);
 

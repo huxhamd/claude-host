@@ -297,6 +297,20 @@
 	color: var(--text-muted);
 }
 
+.claude-settings-relaunch-note {
+	margin-top: 0.6em;
+}
+
+.claude-settings-relaunch-btn {
+	display: block;
+	margin-top: 0.6em;
+}
+
+.claude-settings-warning {
+	color: var(--text-error);
+	margin-top: 0.6em;
+}
+
 .claude-error-details {
 	display: none;
 	background: var(--background-secondary);

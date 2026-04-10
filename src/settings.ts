@@ -1,15 +1,13 @@
 export interface ClaudeHostSettings {
-	fontSize:    number;
-	fontFamily:  string;
-	scrollback:  number;
-	cursorBlink: boolean;
+	fontSize:   number;
+	fontFamily: string;
+	scrollback: number;
 }
 
 export const DEFAULT_SETTINGS: ClaudeHostSettings = {
-	fontSize:    13,
-	fontFamily:  'Cascadia Code',
-	scrollback:  5000,
-	cursorBlink: true,
+	fontSize:   13,
+	fontFamily: 'Cascadia Code',
+	scrollback: 5000,
 };
 
 // fontFamily stores the display name; this map resolves it to a CSS font-family stack.

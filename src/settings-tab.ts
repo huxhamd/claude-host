@@ -36,9 +36,8 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 				 });
 			});
 
-		new Setting(containerEl)
+		const scrollbackSetting = new Setting(containerEl)
 			.setName('Scrollback buffer')
-			.setDesc('Lines retained in scrollback (100–50000). Takes effect when the terminal next opens.')
 			.addText(t => t
 				.setPlaceholder('5000')
 				.setValue(String(this.plugin.settings.scrollback))
@@ -50,15 +49,17 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 					}
 				}));
 
-		new Setting(containerEl)
-			.setName('Cursor blink')
-			.setDesc('Animate the terminal cursor.')
-			.addToggle(t => t
-				.setValue(this.plugin.settings.cursorBlink)
-				.onChange(async v => {
-					this.plugin.settings.cursorBlink = v;
-					await this.plugin.saveSettings();
-				}));
+		scrollbackSetting.descEl.createDiv({ text: 'Lines retained in scrollback (100–50000).' });
+		scrollbackSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
+		const relaunchBtn = scrollbackSetting.descEl.createEl('button', {
+			text: 'Relaunch',
+			cls: 'mod-cta claude-settings-relaunch-btn',
+		});
+		relaunchBtn.addEventListener('click', () => this.plugin.relaunchTerminal());
+		scrollbackSetting.descEl.createDiv({
+			text: 'Warning: this will kill your current Claude Code session.',
+			cls: 'claude-settings-warning',
+		});
 
 	}
 }

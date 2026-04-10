@@ -172,7 +172,7 @@ export class ClaudeTerminalView extends ItemView {
 		if (this.loadingEl) this.loadingEl.style.display = 'flex';
 
 		this.terminal = new Terminal({
-			cursorBlink: this.settings.cursorBlink,
+			cursorBlink: true,
 			fontSize:    this.settings.fontSize,
 			fontFamily:  FONT_FAMILY_OPTIONS[this.settings.fontFamily] ?? '"Cascadia Code", monospace',
 			theme:       this.getTerminalTheme(),
@@ -321,14 +321,24 @@ export class ClaudeTerminalView extends ItemView {
 		await this.spawnShell();
 	}
 
+	async relaunch(): Promise<void> {
+		this.teardownTerminal();
+		if (this.errorEl) this.errorEl.style.display = 'none';
+		if (this.termEl) this.termEl.style.display = '';
+		try {
+			await this.initTerminal();
+		} catch (e) {
+			this.showError('An unexpected error occurred.', String(e));
+		}
+	}
+
 	applySettings(settings: ClaudeHostSettings): void {
 		this.settings = settings;
 		if (!this.terminal) return;
 
 		this.terminal.options.fontSize    = settings.fontSize;
 		this.terminal.options.fontFamily  = FONT_FAMILY_OPTIONS[settings.fontFamily] ?? '"Cascadia Code", monospace';
-		this.terminal.options.cursorBlink = settings.cursorBlink;
-		this.terminal.options.theme       = this.getTerminalTheme();
+		this.terminal.options.theme = this.getTerminalTheme();
 		// scrollback omitted — xterm does not support live buffer resize;
 		// the new value takes effect the next time initTerminal() runs.
 
@@ -342,7 +352,10 @@ export class ClaudeTerminalView extends ItemView {
 		}
 		const proc = this.serverProcess;
 		this.serverProcess = null;
-		proc?.kill();
+		if (proc) {
+			proc.removeAllListeners('exit');
+			proc.kill();
+		}
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;
 		if (this.onContextMenu) {

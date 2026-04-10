@@ -44,6 +44,19 @@ export default class ClaudeHostPlugin extends Plugin {
 		this.propagateSettings();
 	}
 
+	async relaunchTerminal(): Promise<void> {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE);
+		if (leaves.length === 0) {
+			await this.activateView();
+			return;
+		}
+		for (const leaf of leaves) {
+			if (leaf.view instanceof ClaudeTerminalView) {
+				await leaf.view.relaunch();
+			}
+		}
+	}
+
 	private propagateSettings(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE)) {
 			if (leaf.view instanceof ClaudeTerminalView) {

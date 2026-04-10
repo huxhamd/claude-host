@@ -22,7 +22,7 @@ export class ClaudeTerminalView extends ItemView {
 	private ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private onContextMenu: ((e: MouseEvent) => Promise<void>) | null = null;
 	private onLinkMouseMove: ((e: MouseEvent) => void) | null = null;
-	private onClipboardKey: ((e: KeyboardEvent) => boolean) | null = null;
+	private onTerminalKey: ((e: KeyboardEvent) => boolean) | null = null;
 	private onDragMouseDown: ((e: MouseEvent) => void) | null = null;
 	private onDragMouseMove: ((e: MouseEvent) => void) | null = null;
 	private linkTooltip: HTMLElement | null = null;
@@ -275,45 +275,19 @@ export class ClaudeTerminalView extends ItemView {
 			}
 		});
 
-		// Intercept clipboard keyboard shortcuts. Returning false prevents xterm
-		// from forwarding the key to the PTY; returning true lets it pass through.
-		this.onClipboardKey = (e: KeyboardEvent) => {
-			if (e.type === 'keydown' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-				if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-					return this.handleShiftArrow(e.key);
-				}
-			}
-
-			const isMod = e.ctrlKey || e.metaKey;
-			if (!isMod) return true;
-
-			if (e.type === 'keydown') {
-				if (e.key === 'c') {
-					const selection = this.terminal?.getSelection();
-					if (selection) {
-						navigator.clipboard.writeText(selection).catch(() => {});
-						return false; // consume — do not send as SIGINT
-					}
-					return true; // no selection → pass through as SIGINT
-				}
-				if (e.key === 'x') {
-					const selection = this.terminal?.getSelection();
-					if (selection) {
-						navigator.clipboard.writeText(selection).catch(() => {});
-						this.terminal?.clearSelection();
-						return false;
-					}
-					return true;
-				}
-				if (e.key === 'v') {
-					// Return false to suppress the raw keycode being sent to the PTY.
-					// xterm's native paste event listener handles the actual paste.
-					return false;
-				}
-			}
+		// xterm accepts only a single custom key event handler, so this dispatcher
+		// tries each sub-handler in turn and returns the first non-null result.
+		// Each sub-handler returns null to mean "not handled, try the next one".
+		// Returning false prevents xterm from forwarding the key to the PTY;
+		// returning true lets it pass through.
+		this.onTerminalKey = (e: KeyboardEvent) => {
+			const shiftArrowResult = this.handleShiftArrowKey(e);
+			if (shiftArrowResult !== null) return shiftArrowResult;
+			const clipboardResult = this.handleClipboardKey(e);
+			if (clipboardResult !== null) return clipboardResult;
 			return true;
 		};
-		this.terminal.attachCustomKeyEventHandler(this.onClipboardKey);
+		this.terminal.attachCustomKeyEventHandler(this.onTerminalKey);
 
 		await this.spawnShell();
 	}
@@ -336,7 +310,7 @@ export class ClaudeTerminalView extends ItemView {
 			this.termEl?.removeEventListener('mousemove', this.onLinkMouseMove);
 			this.onLinkMouseMove = null;
 		}
-		this.onClipboardKey = null; // cleared by terminal.dispose() below; nulled here for consistency
+		this.onTerminalKey = null; // cleared by terminal.dispose() below; nulled here for consistency
 		if (this.onDragMouseDown) {
 			this.termEl?.removeEventListener('mousedown', this.onDragMouseDown);
 			this.onDragMouseDown = null;
@@ -451,9 +425,11 @@ export class ClaudeTerminalView extends ItemView {
 		const pos = this.terminal!.getSelectionPosition();
 		if (!pos) return false;
 		// getSelectionPosition() returns geometrically ordered start/end regardless of
-		// drag direction. selectionDragReversed was computed in onSelectionChange by
-		// comparing mousedown vs the last mousemove pixel at the moment the selection
-		// changed — immune to post-drag mouse parking.
+		// drag direction. The .x/.y fields are absolute buffer coordinates (not viewport-
+		// relative), so they can be clamped directly against buffer.length elsewhere.
+		// selectionDragReversed was computed in onSelectionChange by comparing mousedown
+		// vs the last mousemove pixel at the moment the selection changed — immune to
+		// post-drag mouse parking.
 		this.selectionAnchor = this.selectionDragReversed ? { col: pos.end.x,   row: pos.end.y   }
 		                                                  : { col: pos.start.x, row: pos.start.y };
 		this.selectionActive = this.selectionDragReversed ? { col: pos.start.x, row: pos.start.y }
@@ -461,7 +437,10 @@ export class ClaudeTerminalView extends ItemView {
 		return true;
 	}
 
-	private handleShiftArrow(key: string): boolean {
+	// Returns null if this event is not a Shift+Arrow key we handle.
+	private handleShiftArrowKey(e: KeyboardEvent): boolean | null {
+		if (e.type !== 'keydown' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return null;
+		if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return null;
 		if (!this.terminal) return true;
 		if (!this.selectionAnchor || !this.selectionActive) {
 			// No keyboard-maintained selection yet — try to adopt an existing
@@ -471,7 +450,36 @@ export class ClaudeTerminalView extends ItemView {
 			// open a fresh selection from the cursor proved too fragile to support.
 			if (!this.initSelectionEndpoints()) return true;
 		}
-		return this.applyShiftArrowStep(key);
+		return this.applyShiftArrowStep(e.key);
+	}
+
+	// Returns null if this event is not a clipboard shortcut we handle.
+	private handleClipboardKey(e: KeyboardEvent): boolean | null {
+		if (e.type !== 'keydown') return null;
+		if (!e.ctrlKey && !e.metaKey) return null;
+		if (e.key === 'c') {
+			const selection = this.terminal?.getSelection();
+			if (selection) {
+				navigator.clipboard.writeText(selection).catch(() => {});
+				return false; // consume — do not send as SIGINT
+			}
+			return true; // no selection → pass through as SIGINT
+		}
+		if (e.key === 'x') {
+			const selection = this.terminal?.getSelection();
+			if (selection) {
+				navigator.clipboard.writeText(selection).catch(() => {});
+				this.terminal?.clearSelection();
+				return false;
+			}
+			return true;
+		}
+		if (e.key === 'v') {
+			// Return false to suppress the raw keycode being sent to the PTY.
+			// xterm's native paste event listener handles the actual paste.
+			return false;
+		}
+		return null;
 	}
 
 	private applyShiftArrowStep(key: string): boolean {
@@ -483,6 +491,11 @@ export class ClaudeTerminalView extends ItemView {
 		const anchorLinear = this.selectionAnchor!.row * cols + this.selectionAnchor!.col;
 		const oldActiveLinear = this.selectionActive!.row * cols + this.selectionActive!.col;
 
+		// Left/Right wrap across row boundaries (treating the buffer as a continuous
+		// character stream), while Up/Down intentionally preserve the column. Column
+		// preservation matches most editors' vertical movement semantics, and because
+		// xterm's buffer is a fixed-width grid every row is `cols` wide, so "landing
+		// past end-of-content" is a non-issue here — every column is a valid cell.
 		let { col, row } = this.selectionActive!;
 		switch (key) {
 			case 'ArrowRight':
@@ -501,21 +514,31 @@ export class ClaudeTerminalView extends ItemView {
 
 		const newActiveLinear = row * cols + col;
 
-		// When active strictly crosses the anchor (not merely reaches it), flip the anchor to the
-		// old active position. This mirrors the behaviour in most editors where reversing direction
-		// past the fixed end re-anchors at the far side of the selection.
-		// newActiveLinear === anchorLinear means the selection collapsed to zero — no flip needed.
-		// The XOR-style check below fires when the side-of-anchor changed between old and new
-		// active positions — e.g. old was right of anchor (true) and new is left of anchor (false),
-		// or vice versa. Same side on both = no crossing, no flip.
+		// Two scenarios to handle here:
+		//
+		// 1. Restore after zero-crossing: if the active position has returned exactly to
+		//    the current anchor AND we have a saved pre-flip anchor from an earlier crossing,
+		//    restore the original anchor instead of collapsing to zero. This makes
+		//    "shift+up then shift+down" return to the original selection, matching most
+		//    editors. Without this, the selection would collapse because anchor === active.
+		//
+		// 2. Flip on crossing: when active strictly crosses the anchor (not merely reaches
+		//    it), re-anchor at the old active position and save the pre-flip anchor for a
+		//    potential future restore. This mirrors editor behaviour where reversing direction
+		//    past the fixed end re-anchors at the far side of the selection.
+		//
+		// The XOR-style check in branch 2 fires when the side-of-anchor changed between old
+		// and new active positions — e.g. old was right of anchor (true) and new is left of
+		// anchor (false), or vice versa. Same side on both = no crossing, no flip.
+		//
+		// Note on selectionPreviousAnchor lifetime: if the user flips, then moves further in
+		// the same direction instead of returning (e.g. shift+up, shift+up), the saved anchor
+		// remains valid — it still points at the original far end, and a later return to the
+		// current anchor will restore it correctly.
 		if (newActiveLinear === anchorLinear && this.selectionPreviousAnchor) {
-			// The active position has returned to the current anchor after a previous flip.
-			// Restore the pre-flip anchor instead of collapsing, so the user gets back the
-			// original selection (mirrors "shift+up then shift+down" in most editors).
 			this.selectionAnchor = this.selectionPreviousAnchor;
 			this.selectionPreviousAnchor = null;
 		} else if (newActiveLinear !== anchorLinear && (oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
-			// Save the pre-flip anchor so a subsequent zero-crossing can restore it.
 			this.selectionPreviousAnchor = this.selectionAnchor;
 			this.selectionAnchor = { col: this.selectionActive!.col, row: this.selectionActive!.row };
 		}

@@ -29,7 +29,7 @@ export class ClaudeTerminalView extends ItemView {
 	private selectionAnchor: { col: number; row: number } | null = null;
 	private selectionActive: { col: number; row: number } | null = null;
 	private isUpdatingSelection = false;
-	private dragStartPixel: { x: number; y: number } | null = null;
+	private dragOriginPixel: { x: number; y: number } | null = null;
 	private lastMouseMovePixel: { x: number; y: number } | null = null;
 	private selectionDragReversed = false;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
@@ -236,13 +236,20 @@ export class ClaudeTerminalView extends ItemView {
 		// the last mousemove — this captures the real-time direction at the
 		// moment the selection actually changed, immune to post-drag parking.
 		this.onDragMouseDown = (e: MouseEvent) => {
-			this.dragStartPixel = { x: e.clientX, y: e.clientY };
+			// Only left-button drags create text selections. Ignoring other
+			// buttons prevents a right-click context menu from stomping the
+			// drag origin before the next real left-click drag.
+			if (e.button !== 0) return;
+			this.dragOriginPixel = { x: e.clientX, y: e.clientY };
 			this.lastMouseMovePixel = null;
 			this.selectionDragReversed = false;
 		};
 		this.termEl!.addEventListener('mousedown', this.onDragMouseDown);
 
 		this.onDragMouseMove = (e: MouseEvent) => {
+			// Only track while a drag is in progress — outside of that the
+			// value is unused and we'd be allocating an object per mousemove.
+			if (!this.dragOriginPixel) return;
 			this.lastMouseMovePixel = { x: e.clientX, y: e.clientY };
 		};
 		this.termEl!.addEventListener('mousemove', this.onDragMouseMove);
@@ -252,16 +259,16 @@ export class ClaudeTerminalView extends ItemView {
 			this.selectionAnchor = null;
 			this.selectionActive = null;
 			// Determine drag direction at the moment the selection changes.
-			if (this.dragStartPixel && this.lastMouseMovePixel && this.termEl && this.terminal) {
+			if (this.dragOriginPixel && this.lastMouseMovePixel && this.termEl && this.terminal) {
 				const lineH = this.termEl.getBoundingClientRect().height / this.terminal.rows;
-				const dy = this.lastMouseMovePixel.y - this.dragStartPixel.y;
+				const dy = this.lastMouseMovePixel.y - this.dragOriginPixel.y;
 				if (dy < -lineH / 2) {
 					this.selectionDragReversed = true;
 				} else if (dy > lineH / 2) {
 					this.selectionDragReversed = false;
 				} else {
 					// Same row — use horizontal direction
-					this.selectionDragReversed = this.lastMouseMovePixel.x < this.dragStartPixel.x;
+					this.selectionDragReversed = this.lastMouseMovePixel.x < this.dragOriginPixel.x;
 				}
 			}
 		});
@@ -328,7 +335,10 @@ export class ClaudeTerminalView extends ItemView {
 			this.onLinkMouseMove = null;
 		}
 		this.onClipboardKey = null; // cleared by terminal.dispose() below; nulled here for consistency
-		this.onDragMouseDown = null; // removed implicitly when termEl is emptied below
+		if (this.onDragMouseDown) {
+			this.termEl?.removeEventListener('mousedown', this.onDragMouseDown);
+			this.onDragMouseDown = null;
+		}
 		if (this.onDragMouseMove) {
 			this.termEl?.removeEventListener('mousemove', this.onDragMouseMove);
 			this.onDragMouseMove = null;
@@ -336,7 +346,7 @@ export class ClaudeTerminalView extends ItemView {
 		this.selectionAnchor = null;
 		this.selectionActive = null;
 		this.isUpdatingSelection = false;
-		this.dragStartPixel = null;
+		this.dragOriginPixel = null;
 		this.lastMouseMovePixel = null;
 		this.selectionDragReversed = false;
 		this.fitAddon?.dispose();
@@ -451,9 +461,12 @@ export class ClaudeTerminalView extends ItemView {
 	private handleShiftArrow(key: string): boolean {
 		if (!this.terminal) return true;
 		if (!this.selectionAnchor || !this.selectionActive) {
-			// No existing selection — Shift+Arrow cannot open a new one.
-			// Only extend an already-active mouse selection.
-			if (!this.initSelectionEndpoints()) return false;
+			// No keyboard-maintained selection yet — try to adopt an existing
+			// mouse selection. If there's no selection at all, let the key pass
+			// through to the PTY so the shell cursor still moves with Shift+Arrow.
+			// Getting accurate cursor-position data back from xterm + node-pty to
+			// open a fresh selection from the cursor proved too fragile to support.
+			if (!this.initSelectionEndpoints()) return true;
 		}
 		return this.applyShiftArrowStep(key);
 	}
@@ -489,6 +502,9 @@ export class ClaudeTerminalView extends ItemView {
 		// old active position. This mirrors the behaviour in most editors where reversing direction
 		// past the fixed end re-anchors at the far side of the selection.
 		// newActiveLinear === anchorLinear means the selection collapsed to zero — no flip needed.
+		// The XOR-style check below fires when the side-of-anchor changed between old and new
+		// active positions — e.g. old was right of anchor (true) and new is left of anchor (false),
+		// or vice versa. Same side on both = no crossing, no flip.
 		if (newActiveLinear !== anchorLinear && (oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
 			this.selectionAnchor = { col: this.selectionActive!.col, row: this.selectionActive!.row };
 		}

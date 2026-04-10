@@ -28,6 +28,7 @@ export class ClaudeTerminalView extends ItemView {
 	private linkTooltip: HTMLElement | null = null;
 	private selectionAnchor: { col: number; row: number } | null = null;
 	private selectionActive: { col: number; row: number } | null = null;
+	private selectionPreviousAnchor: { col: number; row: number } | null = null;
 	private isUpdatingSelection = false;
 	private dragOriginPixel: { x: number; y: number } | null = null;
 	private lastMouseMovePixel: { x: number; y: number } | null = null;
@@ -258,6 +259,7 @@ export class ClaudeTerminalView extends ItemView {
 			if (this.isUpdatingSelection) return;
 			this.selectionAnchor = null;
 			this.selectionActive = null;
+			this.selectionPreviousAnchor = null;
 			// Determine drag direction at the moment the selection changes.
 			if (this.dragOriginPixel && this.lastMouseMovePixel && this.termEl && this.terminal) {
 				const lineH = this.termEl.getBoundingClientRect().height / this.terminal.rows;
@@ -345,6 +347,7 @@ export class ClaudeTerminalView extends ItemView {
 		}
 		this.selectionAnchor = null;
 		this.selectionActive = null;
+		this.selectionPreviousAnchor = null;
 		this.isUpdatingSelection = false;
 		this.dragOriginPixel = null;
 		this.lastMouseMovePixel = null;
@@ -505,7 +508,15 @@ export class ClaudeTerminalView extends ItemView {
 		// The XOR-style check below fires when the side-of-anchor changed between old and new
 		// active positions — e.g. old was right of anchor (true) and new is left of anchor (false),
 		// or vice versa. Same side on both = no crossing, no flip.
-		if (newActiveLinear !== anchorLinear && (oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
+		if (newActiveLinear === anchorLinear && this.selectionPreviousAnchor) {
+			// The active position has returned to the current anchor after a previous flip.
+			// Restore the pre-flip anchor instead of collapsing, so the user gets back the
+			// original selection (mirrors "shift+up then shift+down" in most editors).
+			this.selectionAnchor = this.selectionPreviousAnchor;
+			this.selectionPreviousAnchor = null;
+		} else if (newActiveLinear !== anchorLinear && (oldActiveLinear > anchorLinear) !== (newActiveLinear > anchorLinear)) {
+			// Save the pre-flip anchor so a subsequent zero-crossing can restore it.
+			this.selectionPreviousAnchor = this.selectionAnchor;
 			this.selectionAnchor = { col: this.selectionActive!.col, row: this.selectionActive!.row };
 		}
 

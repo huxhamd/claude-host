@@ -52,8 +52,9 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 		});
 		validationEl.style.display = 'none';
 		scrollbackSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
+		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
 		const relaunchBtn = scrollbackSetting.descEl.createEl('button', {
-			text: 'Relaunch',
+			text: hasSession ? 'Relaunch' : 'Launch',
 			cls: 'mod-cta claude-settings-relaunch-btn',
 		});
 		relaunchBtn.addEventListener('click', () => this.plugin.relaunchTerminal());
@@ -61,7 +62,6 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 			text: 'Warning: this will kill your current Claude Code session.',
 			cls: 'claude-settings-warning claude-settings-relaunch-note',
 		});
-		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
 		warningEl.style.display = hasSession ? '' : 'none';
 
 	}

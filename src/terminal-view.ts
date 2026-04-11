@@ -44,6 +44,7 @@ export class ClaudeTerminalView extends ItemView {
 	private dragOriginPixel: { x: number; y: number } | null = null;
 	private lastMouseMovePixel: { x: number; y: number } | null = null;
 	private selectionDragReversed = false;
+	private isRelaunching = false;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
 	constructor(
@@ -322,13 +323,18 @@ export class ClaudeTerminalView extends ItemView {
 	}
 
 	async relaunch(): Promise<void> {
+		if (this.isRelaunching) return;
+		this.isRelaunching = true;
 		this.teardownTerminal();
 		if (this.errorEl) this.errorEl.style.display = 'none';
 		if (this.termEl) this.termEl.style.display = '';
+		if (this.loadingEl) this.loadingEl.style.display = 'flex';
 		try {
 			await this.initTerminal();
 		} catch (e) {
 			this.showError('An unexpected error occurred.', String(e));
+		} finally {
+			this.isRelaunching = false;
 		}
 	}
 
@@ -435,7 +441,6 @@ export class ClaudeTerminalView extends ItemView {
 				const data = readBuf.subarray(4, 4 + len).toString('utf8');
 				if (this.loadingEl && this.isReadyToShow(data)) {
 					this.loadingEl.style.display = 'none';
-					this.loadingEl = null;
 				}
 				this.terminal?.write(data);
 				readBuf = readBuf.subarray(4 + len);
@@ -672,14 +677,7 @@ export class ClaudeTerminalView extends ItemView {
 		const relaunchBtn = actions.createEl('button', { cls: 'claude-error-btn claude-error-btn-primary', text: 'Relaunch' });
 		relaunchBtn.addEventListener('click', async () => {
 			relaunchBtn.disabled = true;
-			this.teardownTerminal();
-			this.errorEl!.style.display = 'none';
-			this.termEl!.style.display = '';
-			try {
-				await this.initTerminal();
-			} catch (e) {
-				this.showError('An unexpected error occurred.', String(e));
-			}
+			await this.relaunch();
 		});
 
 		const closeBtn = actions.createEl('button', { cls: 'claude-error-btn', text: 'Close' });

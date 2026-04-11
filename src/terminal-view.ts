@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
-import { ClaudeHostSettings, FONT_FAMILY_OPTIONS } from './settings';
+import { ClaudeHostSettings } from './settings';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -175,7 +175,7 @@ export class ClaudeTerminalView extends ItemView {
 		this.terminal = new Terminal({
 			cursorBlink: true,
 			fontSize:    this.settings.fontSize,
-			fontFamily:  FONT_FAMILY_OPTIONS[this.settings.fontFamily] ?? '"Cascadia Code", monospace',
+			fontFamily:  '"Cascadia Code", "Fira Code", Consolas, monospace',
 			theme:       this.getTerminalTheme(),
 			scrollback:  this.settings.scrollback,
 		});
@@ -343,7 +343,7 @@ export class ClaudeTerminalView extends ItemView {
 		if (!this.terminal) return;
 
 		this.terminal.options.fontSize    = settings.fontSize;
-		this.terminal.options.fontFamily  = FONT_FAMILY_OPTIONS[settings.fontFamily] ?? '"Cascadia Code", monospace';
+		this.terminal.options.fontFamily  = '"Cascadia Code", "Fira Code", Consolas, monospace';
 		this.terminal.options.theme = this.getTerminalTheme();
 		// scrollback omitted — xterm does not support live buffer resize;
 		// the new value takes effect the next time initTerminal() runs.

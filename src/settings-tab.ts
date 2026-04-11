@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import { DEFAULT_SETTINGS, FONT_FAMILY_OPTIONS } from './settings';
+import { DEFAULT_SETTINGS } from './settings';
 import { VIEW_TYPE_CLAUDE } from './terminal-view';
 import type ClaudeHostPlugin from './main';
 
@@ -24,18 +24,6 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 					this.plugin.settings.fontSize = v;
 					await this.plugin.saveSettings();
 				}));
-
-		new Setting(containerEl)
-			.setName('Font family')
-			.setDesc('Terminal font. Must be installed on your system.')
-			.addDropdown(d => {
-				for (const name of Object.keys(FONT_FAMILY_OPTIONS)) d.addOption(name, name);
-				d.setValue(this.plugin.settings.fontFamily)
-				 .onChange(async v => {
-					 this.plugin.settings.fontFamily = v;
-					 await this.plugin.saveSettings();
-				 });
-			});
 
 		const scrollbackSetting = new Setting(containerEl)
 			.setName('Scrollback buffer')

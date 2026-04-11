@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
+import { ClaudeHostSettings } from './settings';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -43,9 +44,14 @@ export class ClaudeTerminalView extends ItemView {
 	private dragOriginPixel: { x: number; y: number } | null = null;
 	private lastMouseMovePixel: { x: number; y: number } | null = null;
 	private selectionDragReversed = false;
+	private isRelaunching = false;
 	private readonly linkModifier = navigator.userAgent.includes('Macintosh') ? 'Cmd' : 'Ctrl';
 
-	constructor(leaf: WorkspaceLeaf, private readonly pluginManifestDir: string) {
+	constructor(
+		leaf: WorkspaceLeaf,
+		private readonly pluginManifestDir: string,
+		private settings: ClaudeHostSettings,
+	) {
 		super(leaf);
 	}
 
@@ -168,10 +174,10 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.terminal = new Terminal({
 			cursorBlink: true,
-			fontSize: 13,
-			fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
-			theme: this.getTerminalTheme(),
-			scrollback: 5000,
+			fontSize:    this.settings.fontSize,
+			fontFamily:  '"Cascadia Code", "Fira Code", Consolas, monospace',
+			theme:       this.getTerminalTheme(),
+			scrollback:  this.settings.scrollback,
 		});
 
 		this.fitAddon = new FitAddon();
@@ -316,6 +322,34 @@ export class ClaudeTerminalView extends ItemView {
 		await this.spawnShell();
 	}
 
+	async relaunch(): Promise<void> {
+		if (this.isRelaunching) return;
+		this.isRelaunching = true;
+		this.teardownTerminal();
+		if (this.errorEl) this.errorEl.style.display = 'none';
+		if (this.termEl) this.termEl.style.display = '';
+		if (this.loadingEl) this.loadingEl.style.display = 'flex';
+		try {
+			await this.initTerminal();
+		} catch (e) {
+			this.showError('An unexpected error occurred.', String(e));
+		} finally {
+			this.isRelaunching = false;
+		}
+	}
+
+	applySettings(settings: ClaudeHostSettings): void {
+		this.settings = settings;
+		if (!this.terminal) return;
+
+		this.terminal.options.fontSize = settings.fontSize;
+		this.terminal.options.theme   = this.getTerminalTheme();
+		// scrollback omitted — xterm does not support live buffer resize;
+		// the new value takes effect the next time initTerminal() runs.
+
+		this.fitAddon?.fit(); // font size change may alter col/row count
+	}
+
 	private teardownTerminal(): void {
 		if (this.ptyResizeTimer) {
 			clearTimeout(this.ptyResizeTimer);
@@ -323,7 +357,10 @@ export class ClaudeTerminalView extends ItemView {
 		}
 		const proc = this.serverProcess;
 		this.serverProcess = null;
-		proc?.kill();
+		if (proc) {
+			proc.removeAllListeners('exit');
+			proc.kill();
+		}
 		this.resizeObserver?.disconnect();
 		this.resizeObserver = null;
 		if (this.onContextMenu) {
@@ -403,7 +440,6 @@ export class ClaudeTerminalView extends ItemView {
 				const data = readBuf.subarray(4, 4 + len).toString('utf8');
 				if (this.loadingEl && this.isReadyToShow(data)) {
 					this.loadingEl.style.display = 'none';
-					this.loadingEl = null;
 				}
 				this.terminal?.write(data);
 				readBuf = readBuf.subarray(4 + len);
@@ -640,14 +676,7 @@ export class ClaudeTerminalView extends ItemView {
 		const relaunchBtn = actions.createEl('button', { cls: 'claude-error-btn claude-error-btn-primary', text: 'Relaunch' });
 		relaunchBtn.addEventListener('click', async () => {
 			relaunchBtn.disabled = true;
-			this.teardownTerminal();
-			this.errorEl!.style.display = 'none';
-			this.termEl!.style.display = '';
-			try {
-				await this.initTerminal();
-			} catch (e) {
-				this.showError('An unexpected error occurred.', String(e));
-			}
+			await this.relaunch();
 		});
 
 		const closeBtn = actions.createEl('button', { cls: 'claude-error-btn', text: 'Close' });

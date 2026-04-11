@@ -342,9 +342,8 @@ export class ClaudeTerminalView extends ItemView {
 		this.settings = settings;
 		if (!this.terminal) return;
 
-		this.terminal.options.fontSize    = settings.fontSize;
-		this.terminal.options.fontFamily  = '"Cascadia Code", "Fira Code", Consolas, monospace';
-		this.terminal.options.theme = this.getTerminalTheme();
+		this.terminal.options.fontSize = settings.fontSize;
+		this.terminal.options.theme   = this.getTerminalTheme();
 		// scrollback omitted — xterm does not support live buffer resize;
 		// the new value takes effect the next time initTerminal() runs.
 

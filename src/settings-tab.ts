@@ -52,6 +52,30 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 		});
 		validationEl.style.display = 'none';
 		scrollbackSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
+		const argsSetting = new Setting(containerEl)
+			.setName('Extra arguments')
+			.addText(t => t
+				.setPlaceholder('e.g. --model claude-opus-4-6')
+				.setValue(this.plugin.settings.claudeArgs)
+				.onChange(async v => {
+					this.plugin.settings.claudeArgs = v.trim();
+					await this.plugin.saveSettings();
+				}));
+
+		argsSetting.descEl.createDiv({ text: 'Additional arguments passed to claude on launch.' });
+		argsSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
+		const argsHasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
+		const argsRelaunchBtn = argsSetting.descEl.createEl('button', {
+			text: argsHasSession ? 'Relaunch' : 'Launch',
+			cls: 'mod-cta claude-settings-relaunch-btn',
+		});
+		argsRelaunchBtn.addEventListener('click', () => this.plugin.relaunchTerminal());
+		const argsWarningEl = argsSetting.descEl.createDiv({
+			text: 'Warning: this will kill your current Claude Code session.',
+			cls: 'claude-settings-warning claude-settings-relaunch-note',
+		});
+		argsWarningEl.style.display = argsHasSession ? '' : 'none';
+
 		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
 		const relaunchBtn = scrollbackSetting.descEl.createEl('button', {
 			text: hasSession ? 'Relaunch' : 'Launch',

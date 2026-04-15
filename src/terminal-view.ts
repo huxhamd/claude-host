@@ -423,6 +423,7 @@ export class ClaudeTerminalView extends ItemView {
 				String(terminal.cols),
 				String(terminal.rows),
 				vaultPath,
+				this.settings.claudeArgs ?? '',
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
 			this.showError('Claude Host could not be started.', String(e));

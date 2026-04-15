@@ -9,11 +9,13 @@ const pty = require(path.join(__dirname, 'node_modules', 'node-pty'));
 const cols = Number.parseInt(process.argv[2]) || 80;
 const rows = Number.parseInt(process.argv[3]) || 24;
 const cwd = process.argv[4] || process.cwd();
+const extraArgs = (process.argv[5] ?? '').trim();
+const claudeCmd = extraArgs ? `claude ${extraArgs}` : 'claude';
 // Spawn claude directly so the process exits when claude exits,
 // with no underlying shell left accessible.
 const [shell, args] = process.platform === 'win32'
-    ? ['cmd.exe', ['/c', 'claude']]
-    : [process.env.SHELL || '/bin/bash', ['-c', 'claude']];
+    ? ['cmd.exe', ['/c', claudeCmd]]
+    : [process.env.SHELL || '/bin/bash', ['-c', claudeCmd]];
 
 const ptyProcess = pty.spawn(shell, args, {
     name: 'xterm-256color',

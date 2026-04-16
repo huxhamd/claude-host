@@ -13,11 +13,11 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl('h2', { text: 'Claude Host' });
 
-		// Snapshot the relaunch-required settings at open time — these represent
-		// the values the current session was started with. Updated on relaunch
-		// so warnings clear immediately after the new settings are applied.
-		let appliedScrollback = this.plugin.settings.scrollback;
-		let appliedClaudeArgs = this.plugin.settings.claudeArgs;
+		// Use the values the current session was actually started with, so that
+		// warnings persist correctly if the settings page is closed and reopened
+		// without relaunching. Falls back to current settings when no session exists.
+		let appliedScrollback = this.plugin.appliedSettings?.scrollback ?? this.plugin.settings.scrollback;
+		let appliedClaudeArgs = this.plugin.appliedSettings?.claudeArgs ?? this.plugin.settings.claudeArgs;
 		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
 
 		new Setting(containerEl)
@@ -63,7 +63,7 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 			text: 'Requires a relaunch to take effect.',
 			cls: 'claude-settings-warning claude-settings-relaunch-note',
 		});
-		scrollbackRelaunchEl.style.display = 'none';
+		scrollbackRelaunchEl.style.display = hasSession && this.plugin.settings.scrollback !== appliedScrollback ? '' : 'none';
 
 		const argsSetting = new Setting(containerEl)
 			.setName('Extra arguments')
@@ -84,7 +84,7 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 			text: 'Requires a relaunch to take effect.',
 			cls: 'claude-settings-warning claude-settings-relaunch-note',
 		});
-		argsRelaunchEl.style.display = 'none';
+		argsRelaunchEl.style.display = hasSession && this.plugin.settings.claudeArgs !== appliedClaudeArgs ? '' : 'none';
 
 		const sessionSetting = new Setting(containerEl)
 			.setName('Session')

@@ -51,6 +51,8 @@ export class ClaudeTerminalView extends ItemView {
 		leaf: WorkspaceLeaf,
 		private readonly pluginManifestDir: string,
 		private settings: ClaudeHostSettings,
+		private readonly onSessionStart: () => void,
+		private readonly onSessionEnd: () => void,
 	) {
 		super(leaf);
 	}
@@ -423,11 +425,13 @@ export class ClaudeTerminalView extends ItemView {
 				String(terminal.cols),
 				String(terminal.rows),
 				vaultPath,
+				this.settings.claudeArgs ?? '', // guard: field may be absent in pre-existing data.json
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
 			this.showError('Claude Host could not be started.', String(e));
 			return;
 		}
+		this.onSessionStart();
 
 		let readBuf = Buffer.alloc(0);
 		let stderrOutput = '';
@@ -455,6 +459,7 @@ export class ClaudeTerminalView extends ItemView {
 
 		this.serverProcess.on('exit', (code) => {
 			this.serverProcess = null;
+			this.onSessionEnd();
 			if (code === 0 || code === null) {
 				this.leaf.detach();
 			} else {

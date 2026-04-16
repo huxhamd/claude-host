@@ -423,7 +423,7 @@ export class ClaudeTerminalView extends ItemView {
 				String(terminal.cols),
 				String(terminal.rows),
 				vaultPath,
-				this.settings.claudeArgs ?? '',
+				this.settings.claudeArgs ?? '', // guard: field may be absent in pre-existing data.json
 			], { stdio: ['pipe', 'pipe', 'pipe'] });
 		} catch (e) {
 			this.showError('Claude Host could not be started.', String(e));

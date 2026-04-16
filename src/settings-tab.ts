@@ -13,6 +13,13 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl('h2', { text: 'Claude Host' });
 
+		// Snapshot the relaunch-required settings at open time — these represent
+		// the values the current session was started with. Updated on relaunch
+		// so warnings clear immediately after the new settings are applied.
+		let appliedScrollback = this.plugin.settings.scrollback;
+		let appliedClaudeArgs = this.plugin.settings.claudeArgs;
+		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
+
 		new Setting(containerEl)
 			.setName('Font size')
 			.setDesc('Terminal font size in points (10–24).')
@@ -41,6 +48,7 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 						this.plugin.settings.scrollback = DEFAULT_SETTINGS.scrollback;
 						validationEl.style.display = '';
 					}
+					scrollbackRelaunchEl.style.display = hasSession && this.plugin.settings.scrollback !== appliedScrollback ? '' : 'none';
 					await this.plugin.saveSettings();
 				});
 			});
@@ -51,7 +59,12 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 			cls: 'claude-settings-warning',
 		});
 		validationEl.style.display = 'none';
-		scrollbackSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
+		const scrollbackRelaunchEl = scrollbackSetting.descEl.createDiv({
+			text: 'Requires a relaunch to take effect.',
+			cls: 'claude-settings-warning claude-settings-relaunch-note',
+		});
+		scrollbackRelaunchEl.style.display = 'none';
+
 		const argsSetting = new Setting(containerEl)
 			.setName('Extra arguments')
 			.addText(t => t
@@ -59,34 +72,35 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.claudeArgs)
 				.onChange(async v => {
 					this.plugin.settings.claudeArgs = v.trim();
+					argsRelaunchEl.style.display = hasSession && this.plugin.settings.claudeArgs !== appliedClaudeArgs ? '' : 'none';
 					await this.plugin.saveSettings();
 				}));
 
 		argsSetting.descEl.createDiv({ text: 'Additional arguments passed to claude on launch.' });
-		argsSetting.descEl.createDiv({ text: 'Requires a relaunch to take effect.', cls: 'claude-settings-relaunch-note' });
-		const argsHasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
-		const argsRelaunchBtn = argsSetting.descEl.createEl('button', {
-			text: argsHasSession ? 'Relaunch' : 'Launch',
-			cls: 'mod-cta claude-settings-relaunch-btn',
-		});
-		argsRelaunchBtn.addEventListener('click', () => this.plugin.relaunchTerminal());
-		const argsWarningEl = argsSetting.descEl.createDiv({
-			text: 'Warning: this will kill your current Claude Code session.',
+		const argsRelaunchEl = argsSetting.descEl.createDiv({
+			text: 'Requires a relaunch to take effect.',
 			cls: 'claude-settings-warning claude-settings-relaunch-note',
 		});
-		argsWarningEl.style.display = argsHasSession ? '' : 'none';
+		argsRelaunchEl.style.display = 'none';
 
-		const hasSession = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDE).length > 0;
-		const relaunchBtn = scrollbackSetting.descEl.createEl('button', {
-			text: hasSession ? 'Relaunch' : 'Launch',
-			cls: 'mod-cta claude-settings-relaunch-btn',
-		});
-		relaunchBtn.addEventListener('click', () => this.plugin.relaunchTerminal());
-		const warningEl = scrollbackSetting.descEl.createDiv({
-			text: 'Warning: this will kill your current Claude Code session.',
-			cls: 'claude-settings-warning claude-settings-relaunch-note',
-		});
-		warningEl.style.display = hasSession ? '' : 'none';
+		const sessionSetting = new Setting(containerEl)
+			.setName('Session')
+			.addButton(b => b
+				.setButtonText(hasSession ? 'Relaunch' : 'Launch')
+				.setCta()
+				.onClick(() => {
+					appliedScrollback = this.plugin.settings.scrollback;
+					appliedClaudeArgs = this.plugin.settings.claudeArgs;
+					scrollbackRelaunchEl.style.display = 'none';
+					argsRelaunchEl.style.display = 'none';
+					this.plugin.relaunchTerminal();
+				}));
 
+		if (hasSession) {
+			sessionSetting.descEl.createDiv({
+				text: 'Warning: relaunching will kill your current Claude Code session.',
+				cls: 'claude-settings-warning',
+			});
+		}
 	}
 }

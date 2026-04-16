@@ -67,14 +67,17 @@ export class ClaudeHostSettingTab extends PluginSettingTab {
 
 		const argsSetting = new Setting(containerEl)
 			.setName('Extra arguments')
-			.addText(t => t
-				.setPlaceholder('e.g. --model claude-opus-4-6')
-				.setValue(this.plugin.settings.claudeArgs)
-				.onChange(async v => {
-					this.plugin.settings.claudeArgs = v.trim();
+			.addTextArea(t => {
+				t.setPlaceholder('e.g. --model claude-opus-4-6 --verbose')
+				 .setValue(this.plugin.settings.claudeArgs)
+				 .onChange(async v => {
+					this.plugin.settings.claudeArgs = v.replace(/\s+/g, ' ').trim();
 					argsRelaunchEl.style.display = hasSession && this.plugin.settings.claudeArgs !== appliedClaudeArgs ? '' : 'none';
 					await this.plugin.saveSettings();
-				}));
+				});
+				t.inputEl.style.width = '100%';
+				t.inputEl.rows = 3;
+			});
 
 		argsSetting.descEl.createDiv({ text: 'Additional arguments passed to claude on launch.' });
 		const argsRelaunchEl = argsSetting.descEl.createDiv({

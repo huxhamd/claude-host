@@ -5,7 +5,7 @@ import { ClaudeHostSettingTab } from './settings-tab';
 
 export default class ClaudeHostPlugin extends Plugin {
 	settings!: ClaudeHostSettings;
-	appliedSettings: { scrollback: number; claudeArgs: string } | null = null;
+	appliedSettings: Pick<ClaudeHostSettings, 'scrollback' | 'claudeArgs'> | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -18,8 +18,8 @@ export default class ClaudeHostPlugin extends Plugin {
 				leaf,
 				this.manifest.dir ?? '.obsidian/plugins/claude-host',
 				this.settings,
-				() => { this.appliedSettings = { scrollback: this.settings.scrollback, claudeArgs: this.settings.claudeArgs }; },
-				() => { this.appliedSettings = null; },
+				() => this.snapshotAppliedSettings(),
+				() => this.clearAppliedSettings(),
 			)
 		);
 
@@ -36,6 +36,14 @@ export default class ClaudeHostPlugin extends Plugin {
 				this.activateView();
 			},
 		});
+	}
+
+	private snapshotAppliedSettings(): void {
+		this.appliedSettings = { scrollback: this.settings.scrollback, claudeArgs: this.settings.claudeArgs };
+	}
+
+	private clearAppliedSettings(): void {
+		this.appliedSettings = null;
 	}
 
 	async loadSettings(): Promise<void> {
